@@ -1,0 +1,7 @@
+[project]
+name = "independent-backend-python"
+version = "0.1.0"
+description = "基于FastApi的独立后端服务"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
