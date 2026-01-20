@@ -4,4 +4,9 @@ version = "0.1.0"
 description = "基于FastApi的独立后端服务"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi[standard]>=0.120.1",
+    "psycopg[binary]>=3.2.12",
+    "pydantic-settings>=2.11.0",
+    "sqlmodel>=0.0.27",
+]
