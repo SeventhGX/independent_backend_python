@@ -1,14 +1,25 @@
-from datetime import datetime
-import uuid
-from sqlmodel import SQLModel, Field
+from datetime import datetime, date
+from pydantic import BaseModel
 
 
-class Article(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    title: str
-    url: str
+class ArticleQueryBody(BaseModel):
+    title: str | None = None
+    url: str | None = None
     publish_time: datetime | None = None
     key_words: str | None = None
     summary: str | None = None
     content: str | None = None
-    mail_date: datetime | None = None
+    mail_date: date | None = None
+
+
+class MailDateBody(BaseModel):
+    sender_email: str = "rbmom@ronbaymat.com"
+    sender_password: str = "GY4.0-mom"
+    receiver_email: str | list[str] = []
+    subject: str = "邮件主题"
+    body: str = ""
+
+
+class recipientBody(BaseModel):
+    email: str
+    name: str | None = None

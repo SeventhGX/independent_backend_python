@@ -1,7 +1,7 @@
 from app.utils.config import settings
 from app.utils.log import logger
 from sqlmodel import SQLModel, create_engine
-from app.models.article import *
+from app.models.tables.databaseTables import *
 
 engine = create_engine(str(settings.DATABASE_URI))
 
