@@ -1,4 +1,4 @@
-from app.models.article import recipientBody
+from app.models.article import RecipientBody
 from app.models.tables.databaseTables import Recipient
 from app.repositories import recipientRepo
 

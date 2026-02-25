@@ -9,12 +9,14 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     DEEPSEEK_API_KEY: str
+    DOUBAO_API_KEY: str
+    DOUBAO_CRAWLER_BOT_ID: str
     DATABASE_HOST: str
     DATABASE_PORT: int
     DATABASE_USER: str
     DATABASE_PASSWORD: str
     DATABASE_NAME: str
-    CHROME_DRIVER_PATH: str
+    CHROME_DRIVER_PATH: str | None = None
 
     @computed_field
     @property

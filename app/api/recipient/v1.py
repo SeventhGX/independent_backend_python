@@ -1,15 +1,17 @@
 from fastapi import APIRouter
 from app.services import recipientServ
 
-from app.models.article import recipientBody
+from app.models.article import RecipientBody
 from app.models.tables.databaseTables import Recipient
+from app.utils.log import logger
 
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/recipients/v1")
 
 
 @router.post("/get_all")
 async def get_all_recipients():
+    logger.info("[/recipients/v1/get_all]: 开始处理 ")
     result = await recipientServ.get_all_recipients()
     result["message"] = "success"  # type: ignore
     result["code"] = 200  # type: ignore
@@ -17,7 +19,7 @@ async def get_all_recipients():
 
 
 @router.post("/add")
-async def add_recipient(recipient_body: recipientBody):
+async def add_recipient(recipient_body: RecipientBody):
     recipient = Recipient(email=recipient_body.email, name=recipient_body.name)
     result = await recipientServ.add_recipient(recipient)
     result["message"] = "success"  # type: ignore

@@ -12,7 +12,7 @@ class ArticleQueryBody(BaseModel):
     mail_date: date | None = None
 
 
-class MailDateBody(BaseModel):
+class MailDataBody(BaseModel):
     sender_email: str = "rbmom@ronbaymat.com"
     sender_password: str = "GY4.0-mom"
     receiver_email: str | list[str] = []
@@ -20,6 +20,6 @@ class MailDateBody(BaseModel):
     body: str = ""
 
 
-class recipientBody(BaseModel):
+class RecipientBody(BaseModel):
     email: str
     name: str | None = None

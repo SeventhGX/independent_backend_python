@@ -17,4 +17,4 @@ app.add_middleware(
 
 
 app.include_router(article_router, prefix="/articles", tags=["articles"])
-app.include_router(recipient_router, prefix="/recipients", tags=["recipients"])
+app.include_router(recipient_router, tags=["recipients"])

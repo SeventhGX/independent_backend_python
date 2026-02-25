@@ -21,3 +21,11 @@ def select_distinct_mail_dates() -> list[date | None]:
     with Session(engine) as session:
         mail_dates = session.exec(select(Article.mail_date).distinct()).all()  # type: ignore
         return mail_dates
+
+
+def insert_article(article: Article):
+    with Session(engine) as session:
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+        return article
