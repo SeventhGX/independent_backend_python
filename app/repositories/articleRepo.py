@@ -1,4 +1,4 @@
-from app.models.tables.databaseTables import Article, Recipient
+from app.models.tables.databaseTables import Article
 from datetime import date
 from app.utils.database import engine
 from sqlmodel import Session, select

@@ -131,7 +131,7 @@ async def trans_md_to_html(md_content: str):
 
 async def add_article_by_url(url: str, crawler_type: str = "doubao", **kwargs):
     crawler = Crawler(crawler_type=crawler_type, **kwargs)
-    article = crawler.crawl(url)
+    article = await crawler.crawl_async(url)
     return articleRepo.insert_article(article)
 
 

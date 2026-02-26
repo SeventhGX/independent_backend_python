@@ -3,7 +3,7 @@ from datetime import date
 from app.services import articleServ
 from app.models.article import MailDataBody
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/articles/v1")
 
 
 @router.post("/get_all")

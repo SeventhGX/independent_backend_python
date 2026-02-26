@@ -1,11 +1,57 @@
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from app.api.article.v1 import router as article_router
 from app.api.recipient.v1 import router as recipient_router
+from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # 记录请求信息
+        query_params = dict(request.query_params)
+        body = await request.body()
+        logger.info(
+            f"[REQUEST] {request.method} {request.url.path} | "
+            f"query_params={query_params} | "
+            f"body={body.decode('utf-8', errors='replace') if body else ''}"
+        )
+
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+
+        # 读取响应体
+        resp_body = b""
+        async for chunk in response.body_iterator: #type: ignore
+            resp_body += chunk
+
+        logger.debug(
+            f"[RESPONSE] {request.method} {request.url.path} | "
+            f"body={resp_body.decode('utf-8', errors='replace')}"
+        )
+
+        logger.info(
+            f"[END] {request.method} {request.url.path} | "
+            f"status={response.status_code} | "
+            f"duration={process_time:.3f}s"
+        )
+
+        return Response(
+            content=resp_body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+
+
+app.add_middleware(LoggingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,5 +62,5 @@ app.add_middleware(
 )
 
 
-app.include_router(article_router, prefix="/articles", tags=["articles"])
+app.include_router(article_router, tags=["articles"])
 app.include_router(recipient_router, tags=["recipients"])
