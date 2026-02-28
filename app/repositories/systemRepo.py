@@ -13,7 +13,7 @@ def insert_sys_user(new_user_body: NewUserBody):
             select(Sys_User).where(Sys_User.user_code == new_user_body.user_code)
         ).first()
         if existing_user:
-            raise ValueError("用户编码已存在")
+            raise ValueError("用户编号已存在")
         password_hash = PasswordHash.recommended().hash(new_user_body.password)
         new_user = Sys_User(
             user_code=new_user_body.user_code,
