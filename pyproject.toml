@@ -9,6 +9,7 @@ dependencies = [
     "markdown>=3.10.1",
     "openai>=2.24.0",
     "psycopg[binary]>=3.2.12",
+    "pwdlib[argon2]>=0.3.0",
     "pydantic-settings>=2.11.0",
     "sqlmodel>=0.0.27",
     "volcengine-python-sdk[ark]>=5.0.9",

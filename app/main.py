@@ -8,11 +8,14 @@ from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.utils.database import init_db
+
+init_db()
 
 app = FastAPI()
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
+class LogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # 记录请求信息
         query_params = dict(request.query_params)
@@ -27,9 +30,19 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         process_time = time.time() - start_time
 
-        # 读取响应体
+        # 流式响应（SSE 等）直接透传，不消费 body_iterator，否则会破坏流式传输
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            logger.info(
+                f"[END] {request.method} {request.url.path} | "
+                f"status={response.status_code} | "
+                f"duration={process_time:.3f}s | streaming=true"
+            )
+            return response
+
+        # 读取普通响应体并记录日志
         resp_body = b""
-        async for chunk in response.body_iterator: #type: ignore
+        async for chunk in response.body_iterator:  # type: ignore
             resp_body += chunk
 
         logger.debug(
@@ -51,7 +64,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         )
 
 
-app.add_middleware(LoggingMiddleware)
+app.add_middleware(LogMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

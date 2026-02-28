@@ -1,7 +1,7 @@
 from app.models.tables.databaseTables import Article
 from datetime import date
 from app.utils.database import engine
-from sqlmodel import Session, select
+from sqlmodel import Session, select, or_, col
 # from typing import Sequence
 
 
@@ -13,7 +13,9 @@ def select_all_articles():
 
 def select_articles_by_mail_date(mail_date: date):
     with Session(engine) as session:
-        articles = session.exec(select(Article).where(Article.mail_date == mail_date)).all()
+        articles = session.exec(
+            select(Article).where(or_(Article.mail_date == mail_date, col(Article.mail_date).is_(None)))
+        ).all()
         return articles
 
 

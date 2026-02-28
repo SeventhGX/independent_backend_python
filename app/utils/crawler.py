@@ -1,9 +1,10 @@
 # 根据url获取新闻网页内容
+import asyncio
+
 from volcenginesdkarkruntime import Ark, AsyncArk
 from app.utils.config import settings
 from app.models.tables.databaseTables import Article
 import json
-from app.utils.log import logger
 
 
 class DouBaoCrawler:
@@ -32,7 +33,7 @@ class DouBaoCrawler:
         json_data = json.loads(completion.choices[0].message.content)  # type: ignore
         article = Article(**json_data)
         return article
-    
+
     async def crawl_async(self, url: str) -> Article:
         completion = await self.async_bot.bot_chat.completions.create(
             model=self.craw_bot_id,
@@ -52,6 +53,61 @@ class DouBaoCrawler:
         article = Article(**json_data)
         return article
 
+    async def craw_stream(self, url: str):
+        # 发起流式请求
+        stream = await self.async_bot.bot_chat.completions.create(  # type: ignore
+            model=self.craw_bot_id,  # 替换为实际Bot ID
+            messages=[{"role": "user", "content": url}],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        # full_content = ""
+        # reasoning_content = ""  # 深度思考模型的思考过程内容
+
+        # async for chunk in stream:
+        #     if not chunk.choices:
+        #         # 最后一个块返回usage统计，无choices
+        #         if hasattr(chunk, "bot_usage"):
+        #             print(f"\n\nToken用量：{chunk.bot_usage.model_usage}")
+        #         continue
+
+        #     delta = chunk.choices[0].delta
+        #     # 普通回答内容
+        #     if delta.content:
+        #         full_content += delta.content
+        #         print(delta.content, end="", flush=True)
+        #     # 深度思考过程（仅深度思考模型返回）
+        #     if delta.reasoning_content:
+        #         reasoning_content += delta.reasoning_content
+        #         # 可选择打印思考过程：
+        #         print(f"思考中：{delta.reasoning_content}", end="", flush=True)
+
+        # await client.close()
+        return stream
+
+    async def craw_stream_generator(self, url: str):
+        """异步生成器，逐块 yield SSE 格式的内容，供 StreamingResponse 使用"""
+        stream = await self.async_bot.bot_chat.completions.create(  # type: ignore
+            model=self.craw_bot_id,
+            messages=[{"role": "user", "content": url}],
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        async for chunk in stream:  # type: ignore
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = getattr(delta, "content", None)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if content:
+                # print(content, end="", flush=True)
+                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            if reasoning:
+                # print(reasoning, end="", flush=True)
+                yield f"data: {json.dumps({'reasoning_content': reasoning}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
 
 crawler_dict = {
     "doubao": DouBaoCrawler,
@@ -70,12 +126,21 @@ class Crawler:
 
     def crawl(self, url: str) -> Article:
         return self.crawler.crawl(url)
-    
+
     async def crawl_async(self, url: str) -> Article:
         return await self.crawler.crawl_async(url)
+
+    async def craw_stream(self, url: str):
+        return await self.crawler.craw_stream(url)
+
+    async def craw_stream_generator(self, url: str):
+        async for chunk in self.crawler.craw_stream_generator(url):
+            yield chunk
 
 
 if __name__ == "__main__":
     crawler = Crawler(crawler_type="doubao")
-    article = crawler.crawl("https://www.gkzhan.com/news/detail/189178.html")
-    logger.info(article)
+    # article = crawler.crawl("https://www.gkzhan.com/news/detail/189178.html")
+    # logger.info(article)
+    # article = asyncio.run(crawler.crawl_async("https://www.gkzhan.com/news/detail/189178.html"))
+    asyncio.run(crawler.craw_stream("https://www.gkzhan.com/news/detail/189178.html"))
