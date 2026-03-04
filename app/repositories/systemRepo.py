@@ -26,3 +26,11 @@ def insert_sys_user(new_user_body: NewUserBody):
         session.commit()
         session.refresh(new_user)
         return new_user
+
+
+def select_by_user(user_: str) -> Sys_User | None:
+    with Session(engine) as session:
+        user = session.exec(
+            select(Sys_User).where(or_(Sys_User.user_code == user_, Sys_User.user_name == user_))
+        ).first()
+        return user

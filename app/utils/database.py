@@ -17,6 +17,7 @@ def init_db():
             select(Sys_User).where(Sys_User.user_name == "admin", Sys_User.user_code == "00000000")
         ).first()
         if not admin_user:
+            logger.info("初始化数据库...")
             logger.info("创建默认管理员账号...")
             password_hash = PasswordHash.recommended().hash("admin123")
             admin_user = Sys_User(
@@ -27,7 +28,11 @@ def init_db():
             session.add(admin_user)
             session.commit()
             logger.info("默认管理员账号(00000000;admin;admin123)创建成功！")
+            logger.info("数据库初始化完成！")
     logger.info("数据库初始化完成！")
+
+if settings.INITIALIZE_DB:
+    init_db()
 
 
 if __name__ == "__main__":

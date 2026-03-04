@@ -1,5 +1,7 @@
 import asyncio
 from app.repositories import articleRepo
+from app.models.article import ArticleBody
+from app.models.tables.databaseTables import Article
 from datetime import date
 import markdown
 from app.utils.crawler import Crawler
@@ -132,6 +134,19 @@ async def trans_md_to_html(md_content: str):
 async def add_article_by_url(url: str, crawler_type: str = "doubao", **kwargs):
     crawler = Crawler(crawler_type=crawler_type, **kwargs)
     article = await crawler.crawl_async(url)
+    return articleRepo.insert_article(article)
+
+
+async def add_article_by_body(article_body: ArticleBody):
+    article = Article(
+        title=article_body.title,
+        url=article_body.url,
+        publish_time=article_body.publish_time,
+        key_words=article_body.key_words,
+        summary=article_body.summary,
+        content=article_body.content,
+        mail_date=article_body.mail_date,
+    )
     return articleRepo.insert_article(article)
 
 

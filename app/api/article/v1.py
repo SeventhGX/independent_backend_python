@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from datetime import date
 from app.services import articleServ
-from app.models.article import MailDataBody
+from app.models.article import ArticleBody, MailDataBody
 from app.utils.crawler import Crawler
 
 router = APIRouter(prefix="/articles/v1")
@@ -50,3 +50,13 @@ async def url_stream(url: str, crawler_type: str = "doubao"):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/add_by_body")
+async def add_article_by_body(article_body: ArticleBody):
+    article = await articleServ.add_article_by_body(article_body)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": article,
+    }

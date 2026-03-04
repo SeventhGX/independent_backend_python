@@ -8,9 +8,9 @@ from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.utils.database import init_db
+# from app.utils.database import init_db
 
-init_db()
+# init_db()
 
 app = FastAPI()
 

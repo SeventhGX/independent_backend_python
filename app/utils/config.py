@@ -4,7 +4,7 @@ from pydantic import PostgresDsn, computed_field
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file="../../.env",
+        env_file=".env",
         env_ignore_empty=True,
         extra="ignore",
     )
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     DATABASE_USER: str
     DATABASE_PASSWORD: str
     DATABASE_NAME: str
+    INITIALIZE_DB: bool
     CHROME_DRIVER_PATH: str | None = None
 
     @computed_field

@@ -2,6 +2,16 @@ from datetime import datetime, date
 from pydantic import BaseModel
 
 
+class ArticleBody(BaseModel):
+    title: str
+    url: str
+    publish_time: datetime | None = None
+    key_words: str | None = None
+    summary: str | None = None
+    content: str | None = None
+    mail_date: date | None = None
+
+
 class ArticleQueryBody(BaseModel):
     title: str | None = None
     url: str | None = None
