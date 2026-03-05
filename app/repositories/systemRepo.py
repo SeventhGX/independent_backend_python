@@ -1,8 +1,7 @@
 from app.models.tables.databaseTables import Sys_User
 from app.models.system import NewUserBody
-from datetime import date
 from app.utils.database import engine
-from sqlmodel import Session, select, or_, col
+from sqlmodel import Session, select, or_
 
 from pwdlib import PasswordHash
 

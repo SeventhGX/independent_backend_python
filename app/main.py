@@ -1,9 +1,10 @@
 import time
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from app.api.article.v1 import router as article_router
 from app.api.recipient.v1 import router as recipient_router
+from app.api.system.systemApi import router as system_router
 from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,5 +76,6 @@ app.add_middleware(
 )
 
 
+app.include_router(system_router, tags=["system"])
 app.include_router(article_router, tags=["articles"])
 app.include_router(recipient_router, tags=["recipients"])
