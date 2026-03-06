@@ -9,6 +9,18 @@ log/
 .vscode/
 functionDemo/
 .env
+.env.local
+.env.*.local
 
 # Virtual environments
 .venv
+
+# Docker 相关
+backups/
+*.sql
+*.dump
+
+# 临时文件
+*.bak
+*.tmp
+.DS_Store

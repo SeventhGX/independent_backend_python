@@ -1,0 +1,61 @@
+# Git 相关
+.git
+.gitignore
+.gitattributes
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+ENV/
+env/
+
+# IDE 相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 日志文件
+log/
+*.log
+
+# 测试相关
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# 文档
+*.md
+!README.md
+docs/
+
+# 环境变量文件（不要打包到镜像中）
+.env
+.env.local
+.env.*.local
+
+# Docker 相关
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# 功能演示代码（不需要在生产环境）
+functionDemo/
+
+# 其他
+*.bak
+*.tmp
+.cache/

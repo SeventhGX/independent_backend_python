@@ -1,0 +1,49 @@
+services:
+  # FastAPI 应用服务
+  # 注意：此配置连接到已存在的外部容器 postgres-18 和 my-redis
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: app_backend:latest  # 自定义镜像名称和标签
+    container_name: app_backend
+    restart: unless-stopped
+    environment:
+      # 数据库配置（连接到外部容器 postgres-18）
+      DATABASE_HOST: postgres-18
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DATABASE_NAME: ${DATABASE_NAME}
+      INITIALIZE_DB: ${INITIALIZE_DB:-false}
+      
+      # Redis 配置（连接到外部容器 my-redis）
+      REDIS_HOST: my-redis
+      REDIS_PORT: 6379
+      
+      # AI API Keys
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY}
+      DOUBAO_CRAWLER_BOT_ID: ${DOUBAO_CRAWLER_BOT_ID}
+      
+      # JWT 配置
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      # 持久化日志
+      - ./log:/app/log
+    # 使用默认 bridge 网络以连接到外部容器
+    network_mode: bridge
+    # 添加外部容器的链接
+    external_links:
+      - postgres-18
+      - my-redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

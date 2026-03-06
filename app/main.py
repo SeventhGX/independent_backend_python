@@ -76,6 +76,12 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+async def health_check():
+    """健康检查端点，用于 Docker 健康检查和负载均衡器"""
+    return {"status": "healthy", "service": "independent-backend-python"}
+
+
 app.include_router(system_router, tags=["system"])
 app.include_router(article_router, tags=["articles"])
 app.include_router(recipient_router, tags=["recipients"])
