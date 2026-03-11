@@ -45,6 +45,11 @@ async def md_to_html(mail_date_body: MailDataBody, current_user=Depends(get_curr
     return result
 
 
+@router.post("/send_mail")
+async def send_mail(mail_data_body: MailDataBody, current_user=Depends(get_current_active_user)):
+    pass  # TODO: 实现邮件发送功能
+
+
 @router.post("/add_by_url")
 async def add_article_by_url(
     url: str, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
