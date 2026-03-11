@@ -12,6 +12,7 @@ class Article(SQLModel, table=True):
     summary: str | None = None
     content: str | None = None
     mail_date: date | None = None
+    real_mail_date: date | None = None
 
 
 class Recipient(SQLModel, table=True):

@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from datetime import date
 from app.services import articleServ
-from app.models.article import ArticleBody, MailDataBody
+from app.models.article import ArticleBody, MailDataBody, ArticleQueryBody
 from app.utils.crawler import Crawler
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
@@ -16,6 +16,17 @@ async def get_all_articles(current_user=Depends(get_current_active_user)):
     result["message"] = "success"  # type: ignore
     result["code"] = 200  # type: ignore
     return result
+
+
+@router.post("/get_by_mail_body")
+async def get_articles_by_mail_body(
+    mail_body: ArticleQueryBody, current_user=Depends(get_current_active_user)
+):
+    return {
+        "message": "success",
+        "code": 200,
+        "data": await articleServ.get_articles_by_mail_body(mail_body),
+    }
 
 
 @router.post("/get_by_mail_date")
@@ -35,7 +46,9 @@ async def md_to_html(mail_date_body: MailDataBody, current_user=Depends(get_curr
 
 
 @router.post("/add_by_url")
-async def add_article_by_url(url: str, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)):
+async def add_article_by_url(
+    url: str, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+):
     article = await articleServ.add_article_by_url(url, crawler_type)
     return {
         "message": "success",
