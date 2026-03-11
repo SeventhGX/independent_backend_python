@@ -11,6 +11,16 @@ def select_all_articles():
         return articles
 
 
+def select_article_by_args(**kwargs):
+    with Session(engine) as session:
+        query = select(Article)
+        for key, value in kwargs.items():
+            if value is not None:
+                query = query.where(getattr(Article, key) == value)
+        articles = session.exec(query).all()
+        return articles
+
+
 def select_articles_by_mail_date(mail_date: date):
     with Session(engine) as session:
         articles = session.exec(
@@ -31,3 +41,16 @@ def insert_article(article: Article):
         session.commit()
         session.refresh(article)
         return article
+
+
+def update_article_date(article_id: str, real_mail_date: date):
+    with Session(engine) as session:
+        article = session.get(Article, article_id)
+        if article:
+            article.real_mail_date = real_mail_date
+            session.add(article)
+            session.commit()
+            session.refresh(article)
+            return article
+        else:
+            return None
