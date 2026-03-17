@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from datetime import date
 from app.services import articleServ
-from app.models.article import ArticleBody, MailDataBody, ArticleQueryBody
+from app.models.article import ArticleBody, MailDataBody, ArticleQueryBody, ArticleDateRangeBody
 from app.utils.crawler import Crawler
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
@@ -26,6 +26,17 @@ async def get_articles_by_mail_body(
         "message": "success",
         "code": 200,
         "data": await articleServ.get_articles_by_mail_body(mail_body),
+    }
+
+
+@router.post("/get_by_date_range")
+async def get_articles_by_date_range(
+    date_range: ArticleDateRangeBody, current_user=Depends(get_current_active_user)
+):
+    return {
+        "message": "success",
+        "code": 200,
+        "data": await articleServ.get_articles_by_date_range(date_range),
     }
 
 

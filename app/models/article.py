@@ -33,3 +33,12 @@ class MailDataBody(BaseModel):
 class RecipientBody(BaseModel):
     email: str
     name: str | None = None
+
+
+class ArticleDateRangeBody(BaseModel):
+    publish_time_start: datetime | None = None
+    publish_time_end: datetime | None = None
+    mail_date_start: date | None = None
+    mail_date_end: date | None = None
+    real_mail_date_start: date | None = None
+    real_mail_date_end: date | None = None
