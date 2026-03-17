@@ -29,6 +29,7 @@ class DouBaoCrawler:
                     ],
                 }
             ],
+            max_tokens=40960,
         )
         json_data = json.loads(completion.choices[0].message.content)  # type: ignore
         article = Article(**json_data)
@@ -48,6 +49,7 @@ class DouBaoCrawler:
                     ],
                 }
             ],
+            max_tokens=40960,
         )
         json_data = json.loads(completion.choices[0].message.content)  # type: ignore
         article = Article(**json_data)
@@ -58,6 +60,7 @@ class DouBaoCrawler:
         stream = await self.async_bot.bot_chat.completions.create(  # type: ignore
             model=self.craw_bot_id,  # 替换为实际Bot ID
             messages=[{"role": "user", "content": url}],
+            max_tokens=40960,
             stream=True,
             stream_options={"include_usage": True},
         )
@@ -91,6 +94,7 @@ class DouBaoCrawler:
         stream = await self.async_bot.bot_chat.completions.create(  # type: ignore
             model=self.craw_bot_id,
             messages=[{"role": "user", "content": url}],
+            max_tokens=40960,
             stream=True,
             stream_options={"include_usage": True},
         )
