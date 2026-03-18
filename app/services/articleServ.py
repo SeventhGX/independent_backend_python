@@ -1,6 +1,6 @@
 import asyncio
 from app.repositories import articleRepo
-from app.models.article import ArticleBody, ArticleQueryBody
+from app.models.article import ArticleBody, ArticleQueryBody, ArticleDateRangeBody
 from app.models.tables.databaseTables import Article
 from datetime import date
 import markdown
@@ -14,6 +14,10 @@ async def get_all_articles():
 
 async def get_articles_by_mail_body(mail_body: ArticleQueryBody):
     return articleRepo.select_article_by_args(**mail_body.model_dump())
+
+
+async def get_articles_by_date_range(date_range: ArticleDateRangeBody):
+    return articleRepo.select_article_by_range_args(**date_range.model_dump())
 
 
 async def get_articles_by_mail_date(mail_date: date):

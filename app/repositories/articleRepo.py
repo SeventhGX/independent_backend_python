@@ -21,6 +21,22 @@ def select_article_by_args(**kwargs):
         return articles
 
 
+def select_article_by_range_args(**kwargs):
+    with Session(engine) as session:
+        query = select(Article)
+        for key, value in kwargs.items():
+            if value is not None:
+                if key.endswith("_start"):
+                    field_name = key[:-6]
+                    query = query.where(getattr(Article, field_name) >= value)
+                elif key.endswith("_end"):
+                    field_name = key[:-4]
+                    query = query.where(getattr(Article, field_name) <= value)
+        # print(query)  # 调试输出生成的查询语句
+        articles = session.exec(query).all()
+        return articles
+
+
 def select_articles_by_mail_date(mail_date: date):
     with Session(engine) as session:
         articles = session.exec(
@@ -37,6 +53,9 @@ def select_distinct_mail_dates() -> list[date | None]:
 
 def insert_article(article: Article):
     with Session(engine) as session:
+        exist = session.exec(select(Article).where(Article.url == article.url)).first()
+        if exist:
+            return exist
         session.add(article)
         session.commit()
         session.refresh(article)
