@@ -42,3 +42,8 @@ class ArticleDateRangeBody(BaseModel):
     mail_date_end: date | None = None
     real_mail_date_start: date | None = None
     real_mail_date_end: date | None = None
+
+
+class ArticleConclusionBody(BaseModel):
+    role_cfg: str
+    content: str

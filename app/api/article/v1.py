@@ -2,7 +2,13 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from datetime import date
 from app.services import articleServ
-from app.models.article import ArticleBody, MailDataBody, ArticleQueryBody, ArticleDateRangeBody
+from app.models.article import (
+    ArticleBody,
+    MailDataBody,
+    ArticleQueryBody,
+    ArticleDateRangeBody,
+    ArticleConclusionBody,
+)
 from app.utils.crawler import Crawler
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
@@ -78,6 +84,22 @@ async def url_stream(url: str, crawler_type: str = "doubao", current_user=Depend
     crawler = Crawler(crawler_type=crawler_type)
     return StreamingResponse(
         crawler.craw_stream_generator(url),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/chat_stream")
+async def chat_stream(
+    body: ArticleConclusionBody, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+):
+    crawler = Crawler(crawler_type=crawler_type)
+    messages = [
+        {"role": "system", "content": body.role_cfg},
+        {"role": "user", "content": body.content},
+    ]
+    return StreamingResponse(
+        crawler.chat_stream_generator(messages),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

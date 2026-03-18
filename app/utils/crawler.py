@@ -112,6 +112,27 @@ class DouBaoCrawler:
                 yield f"data: {json.dumps({'reasoning_content': reasoning}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
+    async def chat_stream_generator(self, messages: list[dict]):
+        """流式对话生成器，逐块 yield SSE 格式的内容，供 StreamingResponse 使用"""
+        stream = await self.async_bot.chat.completions.create(  # type: ignore
+            model='doubao-seed-1-8-251228',
+            messages=messages, # type: ignore
+            max_tokens=32000,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        async for chunk in stream:  # type: ignore
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = getattr(delta, "content", None)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if content:
+                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            if reasoning:
+                yield f"data: {json.dumps({'reasoning_content': reasoning}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
 
 crawler_dict = {
     "doubao": DouBaoCrawler,
@@ -139,6 +160,10 @@ class Crawler:
 
     async def craw_stream_generator(self, url: str):
         async for chunk in self.crawler.craw_stream_generator(url):
+            yield chunk
+
+    async def chat_stream_generator(self, messages: list[dict]):
+        async for chunk in self.crawler.chat_stream_generator(messages):
             yield chunk
 
 

@@ -53,6 +53,9 @@ def select_distinct_mail_dates() -> list[date | None]:
 
 def insert_article(article: Article):
     with Session(engine) as session:
+        exist = session.exec(select(Article).where(Article.url == article.url)).first()
+        if exist:
+            return exist
         session.add(article)
         session.commit()
         session.refresh(article)
