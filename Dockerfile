@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv（快速的 Python 包管理器）
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# 安装 uv（快速的 Python 包管理器，使用清华镜像加速）
+RUN pip install uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制项目配置文件
 COPY pyproject.toml uv.lock ./
