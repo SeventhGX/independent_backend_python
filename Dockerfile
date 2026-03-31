@@ -16,7 +16,7 @@ RUN pip install uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 COPY pyproject.toml uv.lock ./
 
 # 使用 uv 同步依赖（创建虚拟环境并安装依赖，使用清华镜像加速）
-RUN UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 # 复制应用代码
 COPY app ./app
