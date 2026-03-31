@@ -47,3 +47,8 @@ class ArticleDateRangeBody(BaseModel):
 class ArticleConclusionBody(BaseModel):
     role_cfg: str
     content: str
+
+
+class SearchBody(BaseModel):
+    system_prompt: str | None = None
+    content: str

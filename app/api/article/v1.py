@@ -8,6 +8,7 @@ from app.models.article import (
     ArticleQueryBody,
     ArticleDateRangeBody,
     ArticleConclusionBody,
+    SearchBody,
 )
 from app.utils.crawler import Crawler
 from app.utils.auth import get_current_active_user
@@ -100,6 +101,18 @@ async def chat_stream(
     ]
     return StreamingResponse(
         crawler.chat_stream_generator(messages),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/search_stream")
+async def search(
+    body: SearchBody, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+):
+    crawler = Crawler(crawler_type=crawler_type, system_prompt=body.system_prompt)
+    return StreamingResponse(
+        crawler.search_stream_generator(body.content),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
