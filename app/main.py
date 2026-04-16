@@ -1,10 +1,11 @@
 import time
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from app.api.article.v1 import router as article_router
 from app.api.recipient.v1 import router as recipient_router
 from app.api.system.systemApi import router as system_router
+from app.api.ai.v1 import router as ai_router
 from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,3 +86,4 @@ async def health_check():
 app.include_router(system_router, tags=["system"])
 app.include_router(article_router, tags=["articles"])
 app.include_router(recipient_router, tags=["recipients"])
+app.include_router(ai_router, tags=["ai"])

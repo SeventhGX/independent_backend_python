@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str
     DOUBAO_API_KEY: str
     DOUBAO_CRAWLER_BOT_ID: str
+    GPT_API_KEY: str
     DATABASE_HOST: str
     DATABASE_PORT: int
     DATABASE_USER: str

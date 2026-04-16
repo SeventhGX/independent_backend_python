@@ -1,5 +1,7 @@
 from datetime import datetime, date
 import uuid
+from sqlalchemy import Column
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import SQLModel, Field
 
 
@@ -31,3 +33,11 @@ class Sys_User(SQLModel, table=True):
     last_login_time: datetime | None = None
     last_login_ip: str | None = None
     del_flag: bool = False
+
+
+class Chat_Session(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID
+    session_name: str
+    create_time: datetime = Field(default_factory=datetime.now)
+    content: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))

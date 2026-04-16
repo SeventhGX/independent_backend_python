@@ -1,5 +1,6 @@
-from config import settings
+from app.utils.config import settings
 from openai import OpenAI, AsyncOpenAI
+import httpx
 
 
 class DeepSeekModel:
@@ -10,63 +11,105 @@ class DeepSeekModel:
     def __init__(
         self,
         api_key: str = settings.DEEPSEEK_API_KEY,
-        model: str = "deepseek-chat",
-        role: str = "你是一个专业助手",
+        # model: str = "deepseek-chat",
+        role: str | None = None,
     ) -> None:
         self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
         self.async_client = AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-        self.model = model
+        # self.model = model
         self.role = role
-        self.messages = [{"role": "system", "content": self.role}]
+        self.messages = [{"role": "system", "content": self.role}] if role is not None else []
 
-    def chat(self, user_input: str) -> str:
-        """
-        同步对话方法
-        """
-        self.messages.append({"role": "user", "content": user_input})
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,  # type: ignore
-        )
-        reply = response.choices[0].message
-        self.messages.append(
-            {"role": reply.role, "content": reply.content if reply.content is not None else ""}
-        )
-        return reply.content if reply.content is not None else ""
+    # async def async_chat(self, model: str, user_input: str) -> str:
+    #     """
+    #     异步对话方法
+    #     """
+    #     self.messages.append({"role": "user", "content": user_input})
+    #     response = await self.async_client.chat.completions.create(
+    #         model=model,
+    #         messages=self.messages,  # type: ignore
+    #     )
+    #     reply = response.choices[0].message
+    #     self.messages.append(
+    #         {"role": reply.role, "content": reply.content if reply.content is not None else ""}
+    #     )
+    #     return reply.content if reply.content is not None else ""
 
-    async def async_chat(self, user_input: str) -> str:
+    # def reset_messages(self) -> None:
+    #     """
+    #     重置对话消息
+    #     """
+    #     self.messages = [{"role": "system", "content": self.role}] if self.role is not None else []
+
+    async def async_chat_stream(self, model: str, messages: dict, **kwargs):
         """
-        异步对话方法
+        异步流式对话方法
         """
-        self.messages.append({"role": "user", "content": user_input})
         response = await self.async_client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,  # type: ignore
+            model=model,
+            messages=messages,  # type: ignore
+            stream=True,
+            **kwargs,
         )
-        reply = response.choices[0].message
-        self.messages.append(
-            {"role": reply.role, "content": reply.content if reply.content is not None else ""}
-        )
-        return reply.content if reply.content is not None else ""
-
-    def reset_messages(self) -> None:
-        """
-        重置对话消息
-        """
-        self.messages = [{"role": "system", "content": self.role}]
+        async for chunk in response:
+            content = chunk.choices[0].delta.content
+            if content is not None:
+                yield content
 
 
 class DouBaoModel:
     """
     豆包
     """
+
     def __init__(self, api_key: str = settings.DOUBAO_API_KEY) -> None:
         pass
+
+    async def async_chat_stream(self, model: str, messages: dict, **kwargs):
+        pass
+
+
+class GPTModel:
+    """
+    GPT模型
+    """
+
+    def __init__(self, api_key: str = settings.GPT_API_KEY) -> None:
+        self.client = OpenAI(
+            api_key=api_key,
+            # 便携AI聚合API的入口地址
+            base_url="https://api.bianxie.ai/v1",
+            # 禁用 SSL 验证，解决第三方 API 的 SSL EOF 问题
+            http_client=httpx.Client(verify=False),
+        )
+        self.async_client = AsyncOpenAI(
+            api_key=api_key,
+            # 便携AI聚合API的入口地址
+            base_url="https://api.bianxie.ai/v1",
+            # 禁用 SSL 验证，解决第三方 API 的 SSL EOF 问题
+            http_client=httpx.AsyncClient(verify=False),
+        )
+
+    async def async_chat_stream(self, model: str, messages: dict, **kwargs):
+        """
+        异步流式对话方法
+        """
+        response = await self.async_client.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore
+            stream=True,
+            **kwargs,
+        )
+        async for chunk in response:
+            content = chunk.choices[0].delta.content
+            if content is not None:
+                yield content
 
 
 model_dict = {
     "deepseek": DeepSeekModel,
     "doubao": DouBaoModel,
+    "gpt": GPTModel,
 }
 
 
@@ -79,22 +122,23 @@ class Chatbot:
         if modelType in model_dict:
             self.model = model_dict[modelType](**kwargs)
         else:
-            raise ValueError(f"Unsupported model type: {modelType}")
+            raise ValueError(f"不支持的模型类型: {modelType}")
 
-    def send_message(self, user_input: str) -> str:
-        """
-        发送消息并获取回复
-        """
-        return self.model.chat(user_input)
+    # async def async_chat(self, **kwargs) -> str:
+    #     """
+    #     异步发送消息并获取回复
+    #     """
+    #     return await self.model.async_chat(**kwargs)
 
-    async def async_send_message(self, user_input: str) -> str:
-        """
-        异步发送消息并获取回复
-        """
-        return await self.model.async_chat(user_input)
+    # def reset_conversation(self) -> None:
+    #     """
+    #     重置对话
+    #     """
+    #     self.model.reset_messages()
 
-    def reset_conversation(self) -> None:
+    async def async_chat_stream(self, model: str, messages: dict, **kwargs):
         """
-        重置对话
+        异步流式对话方法，逐块返回内容
         """
-        self.model.reset_messages()
+        async for content in self.model.async_chat_stream(model=model, messages=messages, **kwargs):
+            yield content
