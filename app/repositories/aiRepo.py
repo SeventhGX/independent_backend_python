@@ -6,12 +6,18 @@ from sqlmodel import Session, select, col
 
 def select_sessions_by_user_id(user_id: uuid.UUID):
     with Session(engine) as session:
-        sessions = session.exec(
-            select(Chat_Session)
+        rows = session.exec(
+            select(Chat_Session.id, Chat_Session.session_name, Chat_Session.create_time)
             .where(Chat_Session.user_id == user_id)
             .order_by(col(Chat_Session.create_time).desc())
         ).all()
-        return sessions
+        return [{"id": row[0], "session_name": row[1], "create_time": row[2]} for row in rows]
+
+
+def select_sessions_by_session_id(session_id: uuid.UUID):
+    with Session(engine) as session:
+        session = session.exec(select(Chat_Session).where(Chat_Session.id == session_id)).first()
+        return session
 
 
 def insert_chat_session(session: Chat_Session):

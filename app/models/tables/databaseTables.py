@@ -39,5 +39,5 @@ class Chat_Session(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID
     session_name: str
-    create_time: datetime = Field(default_factory=datetime.now)
-    content: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    create_time: datetime | None = Field(default_factory=datetime.now)
+    content: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
