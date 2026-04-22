@@ -53,30 +53,23 @@ async def update_session(chat: Chat_Session, current_user=Depends(get_current_ac
 
 @router.get("/models", summary="获取可用的模型列表")
 async def get_available_models(current_user=Depends(get_current_active_user)):
-    # 这里应该调用数据库查询用户可用的模型，暂时返回一个示例数据
+    models = await aiServ.get_models()
     return {
         "message": "success",
         "code": 200,
         "data": [
             {
-                "modelType": "deepseek",
-                "model": "deepseek-chat",
-            },
-            {
-                "modelType": "doubao",
-                "model": "doubao-chat",
-            },
-            {
-                "modelType": "gpt",
-                "model": "gpt-3.5-turbo",
-            },
+                "modelType": model.model_type,
+                "model": model.model,
+            }
+            for model in models
         ],
     }
 
 
 @router.post("/chat_stream", summary="实时聊天流")
 async def chat_stream(chat_body: ChatBody, current_user=Depends(get_current_active_user)):
-    chatbot = Chatbot(modelType=chat_body.model_type or "deepseek")
+    chatbot = Chatbot(modelType=chat_body.model_type or "DeepSeek")
     stream_generator = chatbot.async_chat_stream(
         model=chat_body.model or "deepseek-chat",
         messages=chat_body.content.get("messages", []),  # type: ignore

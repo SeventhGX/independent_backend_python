@@ -1,4 +1,4 @@
-from app.models.tables.databaseTables import Chat_Session
+from app.models.tables.databaseTables import Chat_Session, Chat_Model
 import uuid
 from app.utils.database import engine
 from sqlmodel import Session, select, col
@@ -39,3 +39,10 @@ def update_chat_session_content(session_id: uuid.UUID, content: dict):
             return session
         else:
             return None
+
+
+def select_models():
+    with Session(engine) as session:
+        models = session.exec(select(Chat_Model).where(Chat_Model.del_flag == False)).all()  # noqa: E712
+        # print(models)
+        return models

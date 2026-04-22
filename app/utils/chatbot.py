@@ -77,7 +77,7 @@ class DouBaoModel:
         pass
 
 
-class GPTModel:
+class OpenAIModel:
     """
     GPT模型
     """
@@ -106,6 +106,7 @@ class GPTModel:
             model=model,
             messages=messages,  # type: ignore
             stream=True,
+            max_tokens=16000,
             **kwargs,
         )
         async for chunk in response:
@@ -122,9 +123,9 @@ class GPTModel:
 
 
 model_dict = {
-    "deepseek": DeepSeekModel,
-    "doubao": DouBaoModel,
-    "gpt": GPTModel,
+    "DeepSeek": DeepSeekModel,
+    "DouBao": DouBaoModel,
+    "GPT": OpenAIModel,
 }
 
 
@@ -133,14 +134,14 @@ class Chatbot:
     聊天机器人类，根据参数生成不同模型的实例，并提供统一的接口进行对话交互
     """
 
-    def __init__(self, modelType: str = "deepseek", **kwargs) -> None:
+    def __init__(self, modelType: str = "DeepSeek", **kwargs) -> None:
         if modelType in model_dict:
             self.model = model_dict[modelType](**kwargs)
         else:
             raise ValueError(f"不支持的模型类型: {modelType}")
 
         self.name_model = DeepSeekModel(
-            role="你是一个会话名称生成器，根据用户输入生成一个简洁的会话名称，要求不超过20个字符。"
+            role="你是一个会话名称生成器，根据用户第一次的输入与大模型第一次的返回(部分)生成一个简洁的会话名称，要求不超过20个字符。"
         )
 
     # async def async_chat(self, **kwargs) -> str:

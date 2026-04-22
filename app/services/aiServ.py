@@ -23,7 +23,10 @@ async def generate_session_name(user_input: str) -> str:
 
 async def add_session(chat_body: ChatBody, user_id):
     session_name = await generate_session_name(
-        chat_body.content.get("messages", [{}])[-1].get("content", "新会话")  # type: ignore
+        "user:"
+        + chat_body.content.get("messages", [{}])[0].get("content", "新会话")  # type: ignore
+        + "\n assistant:"
+        + chat_body.content.get("messages", [{}])[1].get("content", "")[:1000]  # type: ignore
     )
     session = Chat_Session(
         user_id=user_id,
@@ -36,3 +39,7 @@ async def add_session(chat_body: ChatBody, user_id):
 
 async def update_session(chat: Chat_Session):
     return aiRepo.update_chat_session_content(chat.id, chat.content)
+
+
+async def get_models():
+    return aiRepo.select_models()
