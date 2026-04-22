@@ -35,7 +35,7 @@ docker-compose build app
 
 # 3. 启动应用容器
 echo -e "${BLUE}[3/4]${NC} 启动应用容器..."
-docker-compose up -d app
+sudo docker-compose up -d app
 
 # 4. 等待服务启动
 echo -e "${BLUE}[4/4]${NC} 等待服务启动..."
