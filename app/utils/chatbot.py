@@ -1,6 +1,7 @@
 from app.utils.config import settings
 from openai import OpenAI, AsyncOpenAI
 import httpx
+import json
 
 
 class DeepSeekModel:
@@ -20,20 +21,20 @@ class DeepSeekModel:
         self.role = role
         self.messages = [{"role": "system", "content": self.role}] if role is not None else []
 
-    # async def async_chat(self, model: str, user_input: str) -> str:
-    #     """
-    #     异步对话方法
-    #     """
-    #     self.messages.append({"role": "user", "content": user_input})
-    #     response = await self.async_client.chat.completions.create(
-    #         model=model,
-    #         messages=self.messages,  # type: ignore
-    #     )
-    #     reply = response.choices[0].message
-    #     self.messages.append(
-    #         {"role": reply.role, "content": reply.content if reply.content is not None else ""}
-    #     )
-    #     return reply.content if reply.content is not None else ""
+    async def async_chat(self, model: str, user_input: str) -> str:
+        """
+        异步对话方法
+        """
+        self.messages.append({"role": "user", "content": user_input})
+        response = await self.async_client.chat.completions.create(
+            model=model,
+            messages=self.messages,  # type: ignore
+        )
+        reply = response.choices[0].message
+        self.messages.append(
+            {"role": reply.role, "content": reply.content if reply.content is not None else ""}
+        )
+        return reply.content if reply.content is not None else ""
 
     # def reset_messages(self) -> None:
     #     """
@@ -52,9 +53,16 @@ class DeepSeekModel:
             **kwargs,
         )
         async for chunk in response:
-            content = chunk.choices[0].delta.content
-            if content is not None:
-                yield content
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = getattr(delta, "content", None)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if content:
+                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            if reasoning:
+                yield f"data: {json.dumps({'reasoning_content': reasoning}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
 
 
 class DouBaoModel:
@@ -69,7 +77,7 @@ class DouBaoModel:
         pass
 
 
-class GPTModel:
+class OpenAIModel:
     """
     GPT模型
     """
@@ -98,18 +106,26 @@ class GPTModel:
             model=model,
             messages=messages,  # type: ignore
             stream=True,
+            max_tokens=16000,
             **kwargs,
         )
         async for chunk in response:
-            content = chunk.choices[0].delta.content
-            if content is not None:
-                yield content
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            content = getattr(delta, "content", None)
+            reasoning = getattr(delta, "reasoning_content", None)
+            if content:
+                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            if reasoning:
+                yield f"data: {json.dumps({'reasoning_content': reasoning}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
 
 
 model_dict = {
-    "deepseek": DeepSeekModel,
-    "doubao": DouBaoModel,
-    "gpt": GPTModel,
+    "DeepSeek": DeepSeekModel,
+    "DouBao": DouBaoModel,
+    "GPT": OpenAIModel,
 }
 
 
@@ -118,11 +134,15 @@ class Chatbot:
     聊天机器人类，根据参数生成不同模型的实例，并提供统一的接口进行对话交互
     """
 
-    def __init__(self, modelType: str = "deepseek", **kwargs) -> None:
+    def __init__(self, modelType: str = "DeepSeek", **kwargs) -> None:
         if modelType in model_dict:
             self.model = model_dict[modelType](**kwargs)
         else:
             raise ValueError(f"不支持的模型类型: {modelType}")
+
+        self.name_model = DeepSeekModel(
+            role="你是一个会话名称生成器，根据用户第一次的输入与大模型第一次的返回(部分)生成一个简洁的会话名称，要求不超过20个字符。"
+        )
 
     # async def async_chat(self, **kwargs) -> str:
     #     """
@@ -135,6 +155,13 @@ class Chatbot:
     #     重置对话
     #     """
     #     self.model.reset_messages()
+
+    async def generate_session_name(self, user_input: str) -> str:
+        """
+        根据用户输入生成会话名称
+        """
+        response = await self.name_model.async_chat(model="deepseek-chat", user_input=user_input)
+        return response
 
     async def async_chat_stream(self, model: str, messages: dict, **kwargs):
         """
