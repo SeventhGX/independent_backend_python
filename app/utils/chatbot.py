@@ -126,6 +126,7 @@ model_dict = {
     "DeepSeek": DeepSeekModel,
     "DouBao": DouBaoModel,
     "GPT": OpenAIModel,
+    "Gemini": OpenAIModel,
 }
 
 
