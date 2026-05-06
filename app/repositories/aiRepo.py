@@ -1,4 +1,4 @@
-from app.models.tables.databaseTables import Chat_Session, Chat_Model
+from app.models.tables.databaseTables import Chat_Session, Chat_Model, Chat_Model_V2, User_Model_Cfg
 import uuid
 from app.utils.database import engine
 from sqlmodel import Session, select, col
@@ -46,3 +46,9 @@ def select_models():
         models = session.exec(select(Chat_Model).where(Chat_Model.del_flag == False)).all()  # noqa: E712
         # print(models)
         return models
+
+
+def select_models_v2():
+    with Session(engine) as session:
+        models2 = session.exec(select(Chat_Model_V2).where(Chat_Model_V2.del_flag == False)).all()  # noqa: E712
+        return models2

@@ -43,3 +43,7 @@ async def update_session(chat: Chat_Session):
 
 async def get_models():
     return aiRepo.select_models()
+
+
+async def get_models_v2():
+    return aiRepo.select_models_v2()
