@@ -2,29 +2,20 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from app.models.ai import ChatBody
 from app.services import aiServ
-from app.models.tables.databaseTables import Chat_Session
 from app.utils.chatbot import Chatbot
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
-from datetime import datetime
 
 router = APIRouter(prefix="/ai/v2")
 
 
 @router.get("/models", summary="获取可用的模型列表")
 async def get_available_models(current_user=Depends(get_current_active_user)):
-    models = await aiServ.get_models_v2()
+    models = await aiServ.get_models_v2(current_user.id)
     return {
         "message": "success",
         "code": 200,
-        "data": [
-            {
-                "modelType": model.model_type,
-                "model": model.model,
-                "kwargs": model.kwargs,
-            }
-            for model in models
-        ],
+        "data": models,
     }
 
 

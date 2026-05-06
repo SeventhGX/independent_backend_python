@@ -52,3 +52,17 @@ def select_models_v2():
     with Session(engine) as session:
         models2 = session.exec(select(Chat_Model_V2).where(Chat_Model_V2.del_flag == False)).all()  # noqa: E712
         return models2
+
+
+def select_user_model_cfg_map(user_id: uuid.UUID, model_v2_ids: list[uuid.UUID]):
+    if not model_v2_ids:
+        return {}
+
+    with Session(engine) as session:
+        cfg_rows = session.exec(
+            select(User_Model_Cfg).where(
+                User_Model_Cfg.user_id == user_id,
+                col(User_Model_Cfg.model_v2_id).in_(model_v2_ids),
+            )
+        ).all()
+        return {row.model_v2_id: row.cfg for row in cfg_rows}

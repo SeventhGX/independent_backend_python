@@ -3,6 +3,36 @@ from app.models.ai import ChatBody
 from app.models.tables.databaseTables import Chat_Session
 from datetime import datetime
 from app.utils.chatbot import Chatbot
+import uuid
+
+
+def _extract_cfg_items(payload):
+    if isinstance(payload, dict):
+        data = payload.get("data", [])
+        return data if isinstance(data, list) else []
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def _merge_user_cfg(kwargs_items, user_cfg_items):
+    value_map = {}
+    for cfg_item in user_cfg_items:
+        if isinstance(cfg_item, dict) and "name" in cfg_item:
+            value_map[cfg_item["name"]] = cfg_item.get("value")
+
+    merged_items = []
+    for kwargs_item in kwargs_items:
+        if not isinstance(kwargs_item, dict):
+            continue
+
+        merged_item = dict(kwargs_item)
+        item_name = merged_item.get("name")
+        if item_name in value_map:
+            merged_item["default"] = value_map[item_name]
+        merged_items.append(merged_item)
+
+    return merged_items
 
 
 async def get_user_sessions(user_id):
@@ -45,5 +75,22 @@ async def get_models():
     return aiRepo.select_models()
 
 
-async def get_models_v2():
-    return aiRepo.select_models_v2()
+async def get_models_v2(user_id: uuid.UUID):
+    models = aiRepo.select_models_v2()
+    user_cfg_map = aiRepo.select_user_model_cfg_map(user_id, [model.id for model in models])
+
+    model_list = []
+    for model in models:
+        kwargs_items = _extract_cfg_items(model.kwargs)
+        user_cfg_items = _extract_cfg_items(user_cfg_map.get(model.id))
+        merged_kwargs = _merge_user_cfg(kwargs_items, user_cfg_items)
+
+        model_list.append(
+            {
+                "modelType": model.model_type,
+                "model": model.model,
+                "kwargs": merged_kwargs,
+            }
+        )
+
+    return model_list
