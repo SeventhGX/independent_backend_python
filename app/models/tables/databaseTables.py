@@ -47,6 +47,25 @@ class Chat_Model(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     model_type: str
     model: str
-    sdk_type: str
+    # sdk_type: str
     description: str | None = None
     del_flag: bool = False
+
+
+class Chat_Model_V2(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    model_type: str
+    model: str
+    key_name: str
+    sdk_type: str
+    base_url: str
+    kwargs: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    description: str | None = None
+    del_flag: bool = False
+
+
+class User_Model_Cfg(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID
+    model_v2_id: uuid.UUID
+    cfg: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
