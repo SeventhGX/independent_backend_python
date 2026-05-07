@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from app.models.ai import ChatBody
+from app.models.ai import ChatBodyV2
 from app.services import aiServ
 from app.utils.chatbot import Chatbot
 from app.utils.auth import get_current_active_user
@@ -20,12 +20,13 @@ async def get_available_models(current_user=Depends(get_current_active_user)):
 
 
 @router.post("/chat_stream", summary="实时聊天流")
-async def chat_stream(chat_body: ChatBody, current_user=Depends(get_current_active_user)):
-    chatbot = Chatbot(modelType=chat_body.model_type or "DeepSeek")
-    stream_generator = chatbot.async_chat_stream(
-        model=chat_body.model or "deepseek-chat",
+async def chat_stream(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+    stream_generator = aiServ.chat_stream(
+        model=chat_body.model,
         messages=chat_body.content.get("messages", []),  # type: ignore
+        **(chat_body.kwargs or {}),
     )
+    await aiServ.update_user_model_cfg(current_user.id, chat_body)
     return StreamingResponse(
         stream_generator,
         media_type="text/event-stream",

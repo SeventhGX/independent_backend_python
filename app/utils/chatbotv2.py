@@ -1,25 +1,22 @@
 from app.utils.config import settings
 from app.utils.database import engine
 from openai import OpenAI, AsyncOpenAI
+from volcenginesdkarkruntime import Ark, AsyncArk
 import httpx
 import json
 from app.models.tables.databaseTables import Chat_Model_V2
 from sqlmodel import Session, select, col
 
+bots = {}
 
-def get_chat_model(model: str) -> Chat_Model_V2 | None:
-    with Session(engine) as session:
-        result = session.exec(
-            select(Chat_Model_V2).where(
-                Chat_Model_V2.model == model,
-                Chat_Model_V2.del_flag == False,  # noqa: E712
-            )
-        ).first()
-        if result is not None:
-            return result
-    return None
-
-
-class ChatBotV2:
-    def __init__(self):
-        pass
+with Session(engine) as session:
+    models2 = session.exec(select(Chat_Model_V2).where(Chat_Model_V2.del_flag == False)).all()  # noqa: E712
+    # print(models2)
+    for model in models2:
+        api_key = getattr(settings, model.key_name, None)
+        if not isinstance(api_key, str) or not api_key:
+            continue
+        if model.sdk_type == "openai":
+            bots[model.model] = AsyncOpenAI(base_url=model.base_url, api_key=api_key)
+        elif model.sdk_type == "volcengine":
+            bots[model.model] = AsyncArk(api_key=api_key)
