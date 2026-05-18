@@ -32,3 +32,19 @@ async def chat_stream(chat_body: ChatBodyV2, current_user=Depends(get_current_ac
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/image_generate", summary="图像生成")
+async def image_generate(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+    result = await aiServ.image_generate(
+        model=chat_body.model,
+        prompt=chat_body.content.get("prompt", ""),  # type: ignore
+        **(chat_body.kwargs or {}),
+    )
+    await aiServ.update_user_model_cfg(current_user.id, chat_body)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": result,
+    }
+
