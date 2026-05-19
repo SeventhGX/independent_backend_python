@@ -1,6 +1,6 @@
 from datetime import datetime, date
 import uuid
-from sqlalchemy import Column
+from sqlalchemy import Column, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import SQLModel, Field
 
@@ -69,3 +69,9 @@ class User_Model_Cfg(SQLModel, table=True):
     user_id: uuid.UUID
     model_v2_id: uuid.UUID
     cfg: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
+
+
+class Image(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    source_url: str | None = None
+    data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))

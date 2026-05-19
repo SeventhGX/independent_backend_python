@@ -23,6 +23,11 @@ class LogMiddleware(BaseHTTPMiddleware):
         # 记录请求信息
         query_params = dict(request.query_params)
         body = await request.body()
+
+        # 健康检查和用户信息接口不进行日志记录，避免日志过大
+        if request.url.path in ["/health", "/system/users/me"]:
+            return await call_next(request)
+
         logger.info(
             f"[REQUEST] {request.method} {request.url.path} | "
             f"query_params={query_params} | "
