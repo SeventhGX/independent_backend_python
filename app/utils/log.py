@@ -1,4 +1,5 @@
 import logging
+import time
 from logging.handlers import TimedRotatingFileHandler
 
 
@@ -32,8 +33,10 @@ logger = logging.getLogger("app")
 logger.setLevel(logging.DEBUG)
 
 formatter = logging.Formatter("[%(asctime)s]%(name)s - %(levelname)s - %(message)s")
+formatter.converter = time.localtime
 
 colored_formatter = ColoredFormatter("[%(asctime)s]%(name)s - %(levelname)s - %(message)s")
+colored_formatter.converter = time.localtime
 
 stream_handler = logging.StreamHandler()
 stream_handler.setLevel(logging.INFO)
