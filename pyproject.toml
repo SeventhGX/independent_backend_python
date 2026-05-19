@@ -16,3 +16,7 @@ dependencies = [
     "sqlmodel>=0.0.27",
     "volcengine-python-sdk[ark]>=5.0.9",
 ]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
