@@ -4,8 +4,9 @@ FROM python:3.13-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖（PostgreSQL 客户端库等）
-RUN apt-get update && apt-get install -y \
+# 切换 apt 为清华镜像源并安装系统依赖
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,7 +17,7 @@ RUN pip install uv -i https://pypi.tuna.tsinghua.edu.cn/simple
 COPY pyproject.toml uv.lock ./
 
 # 使用 uv 同步依赖（创建虚拟环境并安装依赖，使用清华镜像加速）
-RUN uv sync --frozen --no-dev
+RUN UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple uv sync --frozen --no-dev
 
 # 复制应用代码
 COPY app ./app
