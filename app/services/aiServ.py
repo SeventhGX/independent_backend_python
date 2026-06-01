@@ -123,6 +123,10 @@ async def chat_stream(model: str, messages: dict, **kwargs):
         yield "data: [DONE]\n\n"
 
 
+async def save_file():
+    pass
+
+
 async def image_generate(model: str, prompt: str, **kwargs):
     model_data = aiRepo.select_model_v2_by_model(model)
     if model not in bots or model_data is None:
@@ -161,9 +165,7 @@ async def update_user_model_cfg(user_id: uuid.UUID, chat_body: ChatBodyV2):
     for key, value in chat_body.kwargs.items():
         value_map[key] = value
 
-    merged_cfg = {
-        "data": [{"name": key, "value": value} for key, value in value_map.items()]
-    }
+    merged_cfg = {"data": [{"name": key, "value": value} for key, value in value_map.items()]}
 
     if cfg_row:
         return aiRepo.update_user_model_cfg_cfg(cfg_row.id, merged_cfg)
@@ -176,4 +178,3 @@ async def update_user_model_cfg(user_id: uuid.UUID, chat_body: ChatBodyV2):
         )
     )
     return new_cfg
-    
