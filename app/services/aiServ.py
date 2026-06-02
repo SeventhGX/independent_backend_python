@@ -1,6 +1,7 @@
-from app.repositories import aiRepo
+from app.repositories import aiRepo, fileRepo
 from app.models.ai import ChatBody, ChatBodyV2
-from app.models.tables.databaseTables import Chat_Session, User_Model_Cfg
+from app.models.file import NewFileRequest
+from app.models.tables.databaseTables import Chat_Session, User_Model_Cfg, File
 from datetime import datetime
 from app.utils.chatbot import Chatbot
 from app.utils.chatbotv2 import bots
@@ -123,6 +124,20 @@ async def chat_stream(model: str, messages: dict, **kwargs):
         yield "data: [DONE]\n\n"
 
 
+async def save_file(file_req: NewFileRequest):
+    file = File(
+        source_url=file_req.source_url,
+        filename=file_req.filename,
+        file_type=file_req.file_type,
+        data=file_req.data,
+    )
+    return fileRepo.insert_file(file)
+
+
+async def get_file_by_id(file_id: uuid.UUID):
+    return fileRepo.select_file_by_id(file_id)
+
+
 async def image_generate(model: str, prompt: str, **kwargs):
     model_data = aiRepo.select_model_v2_by_model(model)
     if model not in bots or model_data is None:
@@ -161,9 +176,7 @@ async def update_user_model_cfg(user_id: uuid.UUID, chat_body: ChatBodyV2):
     for key, value in chat_body.kwargs.items():
         value_map[key] = value
 
-    merged_cfg = {
-        "data": [{"name": key, "value": value} for key, value in value_map.items()]
-    }
+    merged_cfg = {"data": [{"name": key, "value": value} for key, value in value_map.items()]}
 
     if cfg_row:
         return aiRepo.update_user_model_cfg_cfg(cfg_row.id, merged_cfg)
@@ -176,4 +189,3 @@ async def update_user_model_cfg(user_id: uuid.UUID, chat_body: ChatBodyV2):
         )
     )
     return new_cfg
-    

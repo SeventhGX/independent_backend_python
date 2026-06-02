@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from app.models.ai import ChatBodyV2
 from app.services import aiServ
-from app.utils.chatbot import Chatbot
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
 

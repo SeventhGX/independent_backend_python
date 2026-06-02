@@ -71,7 +71,9 @@ class User_Model_Cfg(SQLModel, table=True):
     cfg: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
-class Image(SQLModel, table=True):
+class File(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     source_url: str | None = None
+    filename: str | None = None
+    file_type: str | None = None
     data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
