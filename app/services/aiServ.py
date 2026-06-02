@@ -1,6 +1,7 @@
-from app.repositories import aiRepo
+from app.repositories import aiRepo, fileRepo
 from app.models.ai import ChatBody, ChatBodyV2
-from app.models.tables.databaseTables import Chat_Session, User_Model_Cfg
+from app.models.file import NewFileRequest
+from app.models.tables.databaseTables import Chat_Session, User_Model_Cfg, File
 from datetime import datetime
 from app.utils.chatbot import Chatbot
 from app.utils.chatbotv2 import bots
@@ -123,8 +124,18 @@ async def chat_stream(model: str, messages: dict, **kwargs):
         yield "data: [DONE]\n\n"
 
 
-async def save_file():
-    pass
+async def save_file(file_req: NewFileRequest):
+    file = File(
+        source_url=file_req.source_url,
+        filename=file_req.filename,
+        file_type=file_req.file_type,
+        data=file_req.data,
+    )
+    return fileRepo.insert_file(file)
+
+
+async def get_file_by_id(file_id: uuid.UUID):
+    return fileRepo.select_file_by_id(file_id)
 
 
 async def image_generate(model: str, prompt: str, **kwargs):

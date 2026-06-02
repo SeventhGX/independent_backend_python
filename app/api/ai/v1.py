@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from app.models.ai import ChatBody
+from app.models.file import NewFileRequest, FileResponse
 from app.services import aiServ
 from app.models.tables.databaseTables import Chat_Session
 from app.utils.chatbot import Chatbot
 from app.utils.auth import get_current_active_user
-from fastapi import Depends
-from datetime import datetime
+from fastapi import Depends, HTTPException
+import uuid
 
 router = APIRouter(prefix="/ai/v1")
 
@@ -79,3 +80,31 @@ async def chat_stream(chat_body: ChatBody, current_user=Depends(get_current_acti
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/save_file", summary="保存文件")
+async def save_file(file_req: NewFileRequest, current_user=Depends(get_current_active_user)):
+    file = await aiServ.save_file(file_req)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": {"id": file.id},
+    }
+
+
+@router.get("/file", summary="根据id获取文件", response_model=None)
+async def get_file(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+    file = await aiServ.get_file_by_id(file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return {
+        "message": "success",
+        "code": 200,
+        "data": FileResponse(
+            id=file.id,
+            source_url=file.source_url,
+            filename=file.filename,
+            file_type=file.file_type,
+            data=file.data,
+        ),
+    }
