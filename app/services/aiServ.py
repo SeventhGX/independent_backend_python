@@ -157,6 +157,26 @@ async def image_generate(model: str, prompt: str, **kwargs):
     return images
 
 
+async def image_edit(model: str, image: list, prompt: str, **kwargs):
+    model_data = aiRepo.select_model_v2_by_model(model)
+    if model not in bots or model_data is None:
+        raise ValueError(f"Model '{model}' not found in database.")
+    bot = bots[model]
+    response = await bot.images.edit(
+        model=model,
+        image=image,
+        prompt=prompt,
+        **kwargs,
+    )
+    images = []
+    for img in response.data:
+        if img.b64_json:
+            images.append({"type": "b64_json", "data": img.b64_json})
+        elif img.url:
+            images.append({"type": "url", "data": img.url})
+    return images
+
+
 async def update_user_model_cfg(user_id: uuid.UUID, chat_body: ChatBodyV2):
     modelv2 = aiRepo.select_model_v2_by_model(chat_body.model)
     if modelv2 is None:

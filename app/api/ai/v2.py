@@ -47,3 +47,25 @@ async def image_generate(chat_body: ChatBodyV2, current_user=Depends(get_current
         "data": result,
     }
 
+
+@router.post("/image_edit", summary="图像编辑")
+async def image_edit(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+    if not chat_body.content or not chat_body.content.get("image") or not chat_body.content.get("prompt"):
+        return {
+            "message": "image and prompt are required",
+            "code": 400,
+            "data": None,
+        }
+    result = await aiServ.image_edit(
+        model=chat_body.model,
+        image=chat_body.content.get("image"),  # type: ignore
+        # mask=chat_body.content.get("mask"),  # type: ignore
+        prompt=chat_body.content.get("prompt"),  # type: ignore
+        **(chat_body.kwargs or {}),
+    )
+    await aiServ.update_user_model_cfg(current_user.id, chat_body)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": result,
+    }
