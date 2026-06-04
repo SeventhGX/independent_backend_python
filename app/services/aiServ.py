@@ -7,6 +7,8 @@ from app.utils.chatbot import Chatbot
 from app.utils.chatbotv2 import bots
 import uuid
 import json
+import base64
+import binascii
 
 
 def _extract_cfg_items(payload):
@@ -36,6 +38,33 @@ def _merge_user_cfg(kwargs_items, user_cfg_items):
         merged_items.append(merged_item)
 
     return merged_items
+
+
+def _normalize_image_inputs(image):
+    if image is None:
+        raise ValueError("image is required")
+
+    image_list = image if isinstance(image, list) else [image]
+    normalized_images = []
+
+    for item in image_list:
+        if isinstance(item, (bytes, bytearray)):
+            normalized_images.append(bytes(item))
+            continue
+
+        if not isinstance(item, str):
+            raise ValueError("image items must be bytes or base64 string")
+
+        encoded = item.strip()
+        if "," in encoded and encoded.lower().startswith("data:image"):
+            encoded = encoded.split(",", 1)[1]
+
+        try:
+            normalized_images.append(base64.b64decode(encoded, validate=True))
+        except (binascii.Error, ValueError):
+            raise ValueError("invalid base64 image data")
+
+    return normalized_images
 
 
 async def get_user_sessions(user_id):
@@ -162,9 +191,13 @@ async def image_edit(model: str, image: list, prompt: str, **kwargs):
     if model not in bots or model_data is None:
         raise ValueError(f"Model '{model}' not found in database.")
     bot = bots[model]
+    normalized_images = _normalize_image_inputs(image)
+    # print("开始调用图像编辑接口")
+    # with open("debug_input_image.png", "wb") as f:
+    #     f.write(normalized_images[0])
     response = await bot.images.edit(
         model=model,
-        image=image,
+        image=normalized_images,
         prompt=prompt,
         **kwargs,
     )

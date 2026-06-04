@@ -56,13 +56,20 @@ async def image_edit(chat_body: ChatBodyV2, current_user=Depends(get_current_act
             "code": 400,
             "data": None,
         }
-    result = await aiServ.image_edit(
-        model=chat_body.model,
-        image=chat_body.content.get("image"),  # type: ignore
-        # mask=chat_body.content.get("mask"),  # type: ignore
-        prompt=chat_body.content.get("prompt"),  # type: ignore
-        **(chat_body.kwargs or {}),
-    )
+    try:
+        result = await aiServ.image_edit(
+            model=chat_body.model,
+            image=chat_body.content.get("image"),  # type: ignore
+            # mask=chat_body.content.get("mask"),  # type: ignore
+            prompt=chat_body.content.get("prompt"),  # type: ignore
+            **(chat_body.kwargs or {}),
+        )
+    except ValueError as e:
+        return {
+            "message": str(e),
+            "code": 400,
+            "data": None,
+        }
     await aiServ.update_user_model_cfg(current_user.id, chat_body)
     return {
         "message": "success",
