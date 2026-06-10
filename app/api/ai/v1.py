@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from app.models.ai import ChatBody
 from app.models.file import NewFileRequest, FileResponse
 from app.services import aiServ
@@ -8,6 +8,8 @@ from app.utils.chatbot import Chatbot
 from app.utils.auth import get_current_active_user
 from fastapi import Depends, HTTPException
 import uuid
+from urllib.parse import quote
+import base64
 
 router = APIRouter(prefix="/ai/v1")
 
@@ -108,3 +110,40 @@ async def get_file(file_id: uuid.UUID, current_user=Depends(get_current_active_u
             data=file.data,
         ),
     }
+
+
+@router.get("/file_compression", summary="根据id获取文件并压缩", response_model=None)
+async def get_file_compression(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+    file = await aiServ.get_file_by_id(file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    compressed_data = await aiServ.compress_file_data(file.data)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": FileResponse(
+            id=file.id,
+            source_url=file.source_url,
+            filename=file.filename,
+            file_type=file.file_type,
+            data=compressed_data,
+        ),
+    }
+
+
+@router.get("/file_download", summary="根据id获取文件blob下载")
+async def get_file_download(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+    file = await aiServ.get_file_by_id(file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    filename = file.filename or f"{file.id}"
+    media_type = file.file_type or "application/octet-stream"
+    quoted_filename = quote(filename)
+
+    return Response(
+        content=base64.b64decode(file.data),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        },
+    )

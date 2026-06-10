@@ -9,6 +9,8 @@ import uuid
 import json
 import base64
 import binascii
+from PIL import Image
+from io import BytesIO
 
 
 def _extract_cfg_items(payload):
@@ -165,6 +167,20 @@ async def save_file(file_req: NewFileRequest):
 
 async def get_file_by_id(file_id: uuid.UUID):
     return fileRepo.select_file_by_id(file_id)
+
+
+# 将base64形式的图像数据解码为字节，并使用PIL库进行压缩，最后再编码回base64格式
+async def compress_file_data(data: bytes) -> bytes:
+    img = base64.b64decode(data)
+    img = Image.open(BytesIO(img))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    # 在内存中压缩，不落盘
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG", quality=90, optimize=True)
+    compressed_image_data = buffer.getvalue()
+    compressed_image_base64 = base64.b64encode(compressed_image_data)
+    return compressed_image_base64
 
 
 async def image_generate(model: str, prompt: str, **kwargs):
