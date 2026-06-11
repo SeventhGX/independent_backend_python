@@ -20,6 +20,16 @@ def select_sessions_by_session_id(session_id: uuid.UUID):
         return session
 
 
+def select_session_by_id_and_user_id(session_id: uuid.UUID, user_id: uuid.UUID):
+    with Session(engine) as session:
+        return session.exec(
+            select(Chat_Session).where(
+                Chat_Session.id == session_id,
+                Chat_Session.user_id == user_id,
+            )
+        ).first()
+
+
 def insert_chat_session(session: Chat_Session):
     with Session(engine) as db_session:
         db_session.add(session)

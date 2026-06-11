@@ -147,3 +147,21 @@ async def get_file_download(file_id: uuid.UUID, current_user=Depends(get_current
             "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
         },
     )
+
+
+@router.get("/session_word_download", summary="根据会话id导出Word下载")
+async def get_session_word_download(session_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+    word_file = await aiServ.export_session_to_word(session_id, current_user.id)
+    if word_file is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    filename = word_file.get("filename", "session.docx")
+    quoted_filename = quote(filename)
+
+    return Response(
+        content=word_file.get("data", b""),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+        },
+    )

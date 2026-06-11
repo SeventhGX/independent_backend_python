@@ -1,7 +1,7 @@
 from app.models.tables.databaseTables import File
 import uuid
 from app.utils.database import engine
-from sqlmodel import Session, select
+from sqlmodel import Session, select, col
 
 
 def insert_file(file: File):
@@ -15,3 +15,10 @@ def insert_file(file: File):
 def select_file_by_id(file_id: uuid.UUID):
     with Session(engine) as session:
         return session.exec(select(File).where(File.id == file_id)).first()
+
+
+def select_files_by_ids(file_ids: list[uuid.UUID]):
+    if not file_ids:
+        return []
+    with Session(engine) as session:
+        return session.exec(select(File).where(col(File.id).in_(file_ids))).all()

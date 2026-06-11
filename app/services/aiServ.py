@@ -9,8 +9,21 @@ import uuid
 import json
 import base64
 import binascii
+import re
 from PIL import Image
 from io import BytesIO
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
+
+NORMAL_EN_FONT = "Times New Roman"
+NORMAL_CN_FONT = "宋体"
+CODE_FONT = "Consolas"
+USER_HEADING_COLOR = RGBColor(31, 78, 121)
+ASSISTANT_HEADING_COLOR = RGBColor(83, 129, 53)
+DEFAULT_HEADING_COLOR = RGBColor(64, 64, 64)
 
 
 def _extract_cfg_items(payload):
@@ -67,6 +80,370 @@ def _normalize_image_inputs(image):
             raise ValueError("invalid base64 image data")
 
     return normalized_images
+
+
+def _build_export_filename(session_name: str | None):
+    base_name = (session_name or "session").strip()
+    if not base_name:
+        base_name = "session"
+    base_name = base_name[:20]
+    base_name = re.sub(r'[\\/:*?"<>|\r\n\t]', "_", base_name)
+    return f"{base_name}.docx"
+
+
+def _extract_image_ids(content: str):
+    image_ids = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line.startswith("Image-:"):
+            continue
+        image_id = line.replace("Image-:", "", 1).strip()
+        if image_id:
+            image_ids.append(image_id)
+    return image_ids
+
+
+def _decode_file_data(file_data: bytes | bytearray | memoryview | str):
+    if not file_data:
+        raise ValueError("empty file data")
+
+    if isinstance(file_data, str):
+        encoded = file_data.strip()
+    elif isinstance(file_data, memoryview):
+        encoded = file_data.tobytes().decode("utf-8").strip()
+    else:
+        encoded = bytes(file_data).decode("utf-8").strip()
+
+    if "," in encoded and encoded.lower().startswith("data:"):
+        encoded = encoded.split(",", 1)[1]
+    return base64.b64decode(encoded)
+
+
+def _split_markdown_table_row(line: str):
+    row = line.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|"):
+        row = row[:-1]
+    return [cell.strip() for cell in row.split("|")]
+
+
+def _is_markdown_table_separator(line: str):
+    stripped = line.strip()
+    return bool(re.match(r"^\|?\s*:?-{3,}:?(\s*\|\s*:?-{3,}:?)+\s*\|?$", stripped))
+
+
+def _set_run_font(run, en_font: str = NORMAL_EN_FONT, cn_font: str = NORMAL_CN_FONT):
+    run.font.name = en_font
+    run_properties = run._r.get_or_add_rPr()
+    fonts = run_properties.rFonts
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        run_properties.append(fonts)
+    fonts.set(qn("w:ascii"), en_font)
+    fonts.set(qn("w:hAnsi"), en_font)
+    fonts.set(qn("w:eastAsia"), cn_font)
+
+
+def _set_document_default_fonts(document):
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = NORMAL_EN_FONT
+    normal_style.font.size = Pt(11)
+    normal_style._element.rPr.rFonts.set(qn("w:ascii"), NORMAL_EN_FONT)
+    normal_style._element.rPr.rFonts.set(qn("w:hAnsi"), NORMAL_EN_FONT)
+    normal_style._element.rPr.rFonts.set(qn("w:eastAsia"), NORMAL_CN_FONT)
+
+
+def _set_run_shading(run, fill: str):
+    run_properties = run._r.get_or_add_rPr()
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), fill)
+    run_properties.append(shading)
+
+
+def _set_paragraph_shading(paragraph, fill: str):
+    paragraph_properties = paragraph._p.get_or_add_pPr()
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), fill)
+    paragraph_properties.append(shading)
+
+
+def _set_cell_shading(cell, fill: str):
+    cell_properties = cell._tc.get_or_add_tcPr()
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), fill)
+    cell_properties.append(shading)
+
+
+def _set_table_borders(table):
+    table.style = "Table Grid"
+    table_properties = table._tbl.tblPr
+    borders = table_properties.find(qn("w:tblBorders"))
+    if borders is not None:
+        table_properties.remove(borders)
+
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        border = OxmlElement(f"w:{edge}")
+        border.set(qn("w:val"), "single")
+        border.set(qn("w:sz"), "8")
+        border.set(qn("w:space"), "0")
+        border.set(qn("w:color"), "808080")
+        borders.append(border)
+    table_properties.append(borders)
+
+
+def _append_inline_text(paragraph, text: str):
+    inline_pattern = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)")
+    position = 0
+
+    for match in inline_pattern.finditer(text):
+        if match.start() > position:
+            run = paragraph.add_run(text[position:match.start()])
+            _set_run_font(run)
+
+        token = match.group(0)
+        run_text = token
+        is_bold = False
+        is_italic = False
+        is_code = False
+
+        if token.startswith("`") and token.endswith("`"):
+            run_text = token[1:-1]
+            is_code = True
+        elif token.startswith("**") and token.endswith("**"):
+            run_text = token[2:-2]
+            is_bold = True
+        elif token.startswith("__") and token.endswith("__"):
+            run_text = token[2:-2]
+            is_bold = True
+        elif token.startswith("*") and token.endswith("*"):
+            run_text = token[1:-1]
+            is_italic = True
+        elif token.startswith("_") and token.endswith("_"):
+            run_text = token[1:-1]
+            is_italic = True
+
+        run = paragraph.add_run(run_text)
+        _set_run_font(run)
+        run.bold = is_bold
+        run.italic = is_italic
+        if is_code:
+            _set_run_font(run, CODE_FONT, CODE_FONT)
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(196, 46, 46)
+            _set_run_shading(run, "F6F8FA")
+
+        position = match.end()
+
+    if position < len(text):
+        run = paragraph.add_run(text[position:])
+        _set_run_font(run)
+
+
+def _append_code_block(document, code_lines: list[str]):
+    paragraph = document.add_paragraph()
+    _set_paragraph_shading(paragraph, "F6F8FA")
+    paragraph.paragraph_format.left_indent = Inches(0.15)
+    paragraph.paragraph_format.right_indent = Inches(0.15)
+    paragraph.paragraph_format.space_before = Pt(6)
+    paragraph.paragraph_format.space_after = Pt(6)
+    run = paragraph.add_run("\n".join(code_lines))
+    _set_run_font(run, CODE_FONT, CODE_FONT)
+    run.font.size = Pt(9)
+
+
+def _append_table_cell_text(cell, text: str, bold: bool = False):
+    paragraph = cell.paragraphs[0]
+    _append_inline_text(paragraph, text)
+    for run in paragraph.runs:
+        run.bold = bold or run.bold
+
+
+def _append_role_heading(document, role: str, fallback: str):
+    role_name = role.capitalize() if role else fallback
+    heading = document.add_heading(level=1)
+    run = heading.add_run(role_name)
+    _set_run_font(run)
+    run.bold = True
+    if role.lower() == "user":
+        run.font.color.rgb = USER_HEADING_COLOR
+    elif role.lower() == "assistant":
+        run.font.color.rgb = ASSISTANT_HEADING_COLOR
+    else:
+        run.font.color.rgb = DEFAULT_HEADING_COLOR
+    return heading
+
+
+def _append_markdown(document, md_content: str):
+    lines = md_content.splitlines()
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            code_lines = []
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                code_lines.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1
+            _append_code_block(document, code_lines)
+            continue
+
+        if not stripped:
+            index += 1
+            continue
+
+        if stripped.startswith("#"):
+            md_level = len(stripped) - len(stripped.lstrip("#"))
+            level = min(md_level + 1, 9)
+            heading_text = stripped[md_level:].strip()
+            if heading_text:
+                heading = document.add_heading(level=level)
+                _append_inline_text(heading, heading_text)
+                for run in heading.runs:
+                    run.font.color.rgb = DEFAULT_HEADING_COLOR
+            index += 1
+            continue
+
+        if (
+            index + 1 < len(lines)
+            and "|" in lines[index]
+            and _is_markdown_table_separator(lines[index + 1])
+        ):
+            headers = _split_markdown_table_row(lines[index])
+            table = document.add_table(rows=1, cols=len(headers))
+            _set_table_borders(table)
+            for col_index, header in enumerate(headers):
+                cell = table.rows[0].cells[col_index]
+                _set_cell_shading(cell, "D9EAF7")
+                _append_table_cell_text(cell, header, bold=True)
+
+            index += 2
+            while index < len(lines):
+                row_line = lines[index].strip()
+                if not row_line or "|" not in row_line:
+                    break
+                row_values = _split_markdown_table_row(lines[index])
+                row_cells = table.add_row().cells
+                for col_index in range(len(headers)):
+                    cell_text = row_values[col_index] if col_index < len(row_values) else ""
+                    _append_table_cell_text(row_cells[col_index], cell_text)
+                index += 1
+            continue
+
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            paragraph = document.add_paragraph(style="List Bullet")
+            _append_inline_text(paragraph, stripped[2:].strip())
+            index += 1
+            continue
+
+        ordered_match = re.match(r"^\d+\.\s+(.*)$", stripped)
+        if ordered_match:
+            paragraph = document.add_paragraph(style="List Number")
+            _append_inline_text(paragraph, ordered_match.group(1))
+            index += 1
+            continue
+
+        paragraph_lines = [line]
+        index += 1
+        while index < len(lines):
+            next_line = lines[index]
+            next_stripped = next_line.strip()
+            if not next_stripped:
+                break
+            if next_stripped.startswith("#"):
+                break
+            if next_stripped.startswith("- ") or next_stripped.startswith("* "):
+                break
+            if re.match(r"^\d+\.\s+", next_stripped):
+                break
+            if next_stripped.startswith("```"):
+                break
+            if index + 1 < len(lines) and "|" in next_line and _is_markdown_table_separator(lines[index + 1]):
+                break
+            paragraph_lines.append(next_line)
+            index += 1
+
+        paragraph = document.add_paragraph()
+        _append_inline_text(paragraph, "\n".join(paragraph_lines).strip())
+
+
+async def export_session_to_word(session_id: uuid.UUID, user_id: uuid.UUID):
+    session = aiRepo.select_session_by_id_and_user_id(session_id, user_id)
+    if session is None:
+        return None
+
+    messages = []
+    content = session.content if session.content else {}
+    if isinstance(content, dict):
+        messages = content.get("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+
+    image_uuid_list = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        message_content = message.get("content", "")
+        if not isinstance(message_content, str):
+            continue
+        image_ids = _extract_image_ids(message_content)
+        for image_id in image_ids:
+            try:
+                image_uuid_list.append(uuid.UUID(image_id))
+            except ValueError:
+                continue
+
+    image_file_map = {
+        str(file.id): file
+        for file in fileRepo.select_files_by_ids(image_uuid_list)
+    }
+
+    document = Document()
+    _set_document_default_fonts(document)
+    title = document.add_heading(session.session_name or "Session", level=0)
+    for run in title.runs:
+        _set_run_font(run)
+
+    for index, message in enumerate(messages, start=1):
+        if not isinstance(message, dict):
+            continue
+
+        role = str(message.get("role", "")).strip()
+        message_content = message.get("content", "")
+        if not isinstance(message_content, str):
+            message_content = str(message_content)
+
+        _append_role_heading(document, role, f"Message {index}")
+
+        image_ids = _extract_image_ids(message_content)
+        if image_ids:
+            for image_id in image_ids:
+                image_file = image_file_map.get(image_id)
+                if image_file is None:
+                    document.add_paragraph(f"[Image not found: {image_id}]")
+                    continue
+                try:
+                    image_bytes = _decode_file_data(image_file.data)
+                    document.add_picture(BytesIO(image_bytes), width=Inches(6))
+                except Exception:
+                    document.add_paragraph(f"[Image decode failed: {image_id}]")
+            continue
+
+        _append_markdown(document, message_content)
+
+    output = BytesIO()
+    document.save(output)
+    output.seek(0)
+    return {
+        "filename": _build_export_filename(session.session_name),
+        "data": output.getvalue(),
+    }
 
 
 async def get_user_sessions(user_id):
