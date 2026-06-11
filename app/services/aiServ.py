@@ -146,6 +146,7 @@ def _set_run_font(run, en_font: str = NORMAL_EN_FONT, cn_font: str = NORMAL_CN_F
 
 
 def _set_document_default_fonts(document):
+    # 设置文档默认中英文字体，避免 Word 对中文回退到非预期字体。
     normal_style = document.styles["Normal"]
     normal_style.font.name = NORMAL_EN_FONT
     normal_style.font.size = Pt(11)
@@ -176,6 +177,7 @@ def _set_cell_shading(cell, fill: str):
 
 
 def _set_table_borders(table):
+    # 使用显式 XML 边框，确保不同 Word 客户端打开时表格边框稳定显示。
     table.style = "Table Grid"
     table_properties = table._tbl.tblPr
     borders = table_properties.find(qn("w:tblBorders"))
@@ -194,13 +196,26 @@ def _set_table_borders(table):
 
 
 def _append_inline_text(paragraph, text: str):
+    # 渲染 Markdown 行内样式，并将 <br> / <br/> 转换为 Word 段内换行。
     inline_pattern = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)")
     position = 0
 
+    def add_text_runs(run_text: str):
+        runs = []
+        parts = re.split(r"<br\s*/?>", run_text, flags=re.IGNORECASE)
+        for part_index, part in enumerate(parts):
+            if part_index > 0:
+                paragraph.add_run().add_break()
+            if not part:
+                continue
+            run = paragraph.add_run(part)
+            _set_run_font(run)
+            runs.append(run)
+        return runs
+
     for match in inline_pattern.finditer(text):
         if match.start() > position:
-            run = paragraph.add_run(text[position:match.start()])
-            _set_run_font(run)
+            add_text_runs(text[position:match.start()])
 
         token = match.group(0)
         run_text = token
@@ -224,24 +239,27 @@ def _append_inline_text(paragraph, text: str):
             run_text = token[1:-1]
             is_italic = True
 
-        run = paragraph.add_run(run_text)
-        _set_run_font(run)
-        run.bold = is_bold
-        run.italic = is_italic
-        if is_code:
-            _set_run_font(run, CODE_FONT, CODE_FONT)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(196, 46, 46)
-            _set_run_shading(run, "F6F8FA")
+        runs = add_text_runs(run_text)
+        if not runs:
+            position = match.end()
+            continue
+        for run in runs:
+            run.bold = is_bold
+            run.italic = is_italic
+            if is_code:
+                _set_run_font(run, CODE_FONT, CODE_FONT)
+                run.font.size = Pt(9)
+                run.font.color.rgb = RGBColor(196, 46, 46)
+                _set_run_shading(run, "F6F8FA")
 
         position = match.end()
 
     if position < len(text):
-        run = paragraph.add_run(text[position:])
-        _set_run_font(run)
+        add_text_runs(text[position:])
 
 
 def _append_code_block(document, code_lines: list[str]):
+    # 将 Markdown 围栏代码块写成浅底色、Consolas 字体的独立段落。
     paragraph = document.add_paragraph()
     _set_paragraph_shading(paragraph, "F6F8FA")
     paragraph.paragraph_format.left_indent = Inches(0.15)
@@ -254,6 +272,7 @@ def _append_code_block(document, code_lines: list[str]):
 
 
 def _append_table_cell_text(cell, text: str, bold: bool = False):
+    # 表格单元格复用行内渲染，因此支持粗体、斜体、行内代码和 <br> 换行。
     paragraph = cell.paragraphs[0]
     _append_inline_text(paragraph, text)
     for run in paragraph.runs:
@@ -261,6 +280,7 @@ def _append_table_cell_text(cell, text: str, bold: bool = False):
 
 
 def _append_role_heading(document, role: str, fallback: str):
+    # User / Assistant 作为一级标题输出，并用颜色区分对话身份。
     role_name = role.capitalize() if role else fallback
     heading = document.add_heading(level=1)
     run = heading.add_run(role_name)
@@ -276,6 +296,7 @@ def _append_role_heading(document, role: str, fallback: str):
 
 
 def _append_markdown(document, md_content: str):
+    # 将会话 Markdown 内容渲染为 Word 结构；正文标题自动下移一级，避开角色标题。
     lines = md_content.splitlines()
     index = 0
 
@@ -374,6 +395,7 @@ def _append_markdown(document, md_content: str):
 
 
 async def export_session_to_word(session_id: uuid.UUID, user_id: uuid.UUID):
+    # 组装会话 Word 导出：解析消息、批量加载图片、渲染 Markdown，最后返回 docx 二进制。
     session = aiRepo.select_session_by_id_and_user_id(session_id, user_id)
     if session is None:
         return None
