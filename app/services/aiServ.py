@@ -215,7 +215,7 @@ def _append_inline_text(paragraph, text: str):
 
     for match in inline_pattern.finditer(text):
         if match.start() > position:
-            add_text_runs(text[position:match.start()])
+            add_text_runs(text[position : match.start()])
 
         token = match.group(0)
         run_text = token
@@ -331,11 +331,7 @@ def _append_markdown(document, md_content: str):
             index += 1
             continue
 
-        if (
-            index + 1 < len(lines)
-            and "|" in lines[index]
-            and _is_markdown_table_separator(lines[index + 1])
-        ):
+        if index + 1 < len(lines) and "|" in lines[index] and _is_markdown_table_separator(lines[index + 1]):
             headers = _split_markdown_table_row(lines[index])
             table = document.add_table(rows=1, cols=len(headers))
             _set_table_borders(table)
@@ -421,10 +417,7 @@ async def export_session_to_word(session_id: uuid.UUID, user_id: uuid.UUID):
             except ValueError:
                 continue
 
-    image_file_map = {
-        str(file.id): file
-        for file in fileRepo.select_files_by_ids(image_uuid_list)
-    }
+    image_file_map = {str(file.id): file for file in fileRepo.select_files_by_ids(image_uuid_list)}
 
     document = Document()
     _set_document_default_fonts(document)
@@ -502,6 +495,10 @@ async def add_session(chat_body: ChatBody, user_id):
 
 async def update_session(chat: Chat_Session):
     return aiRepo.update_chat_session_content(chat.id, chat.content)
+
+
+async def delete_session(session_id: uuid.UUID):
+    return aiRepo.delete_chat_session(session_id)
 
 
 async def get_models():

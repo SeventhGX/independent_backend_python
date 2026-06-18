@@ -38,6 +38,17 @@ def insert_chat_session(session: Chat_Session):
         return session
 
 
+def delete_chat_session(session_id: uuid.UUID):
+    with Session(engine) as db_session:
+        session = db_session.exec(select(Chat_Session).where(Chat_Session.id == session_id)).first()
+        if session:
+            db_session.delete(session)
+            db_session.commit()
+            return True
+        else:
+            return False
+
+
 def update_chat_session_content(session_id: uuid.UUID, content: dict):
     with Session(engine) as db_session:
         session = db_session.exec(select(Chat_Session).where(Chat_Session.id == session_id)).first()

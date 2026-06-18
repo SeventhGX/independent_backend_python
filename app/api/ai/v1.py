@@ -44,6 +44,18 @@ async def add_session(chat_body: ChatBody, current_user=Depends(get_current_acti
     }
 
 
+@router.delete("/delete_session", summary="删除会话")
+async def delete_session(session_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+    success = await aiServ.delete_session(session_id)
+    if success:
+        return {
+            "message": "success",
+            "code": 200,
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
 @router.post("/update_session", summary="更新会话信息")
 async def update_session(chat: Chat_Session, current_user=Depends(get_current_active_user)):
     session = await aiServ.update_session(chat)
