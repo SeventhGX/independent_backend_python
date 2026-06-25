@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from datetime import date
 from app.services import articleServ
@@ -12,7 +12,6 @@ from app.models.article import (
 )
 from app.utils.crawler import Crawler
 from app.utils.auth import get_current_active_user
-from fastapi import Depends
 
 router = APIRouter(prefix="/articles/v1")
 
@@ -65,7 +64,15 @@ async def md_to_html(mail_date_body: MailDataBody, current_user=Depends(get_curr
 
 @router.post("/send_mail")
 async def send_mail(mail_data_body: MailDataBody, current_user=Depends(get_current_active_user)):
-    pass  # TODO: 实现邮件发送功能
+    try:
+        result = await articleServ.send_mail(mail_data_body)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"邮件发送失败: {e}")
+    result["message"] = "success"  # type: ignore
+    result["code"] = 200  # type: ignore
+    return result
 
 
 @router.post("/add_by_url")

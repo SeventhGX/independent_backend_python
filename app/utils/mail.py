@@ -1,23 +1,32 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.header import Header
+from email.utils import formataddr
 import markdown
 
 
-def send_email(sender_email, sender_password, receiver_email, subject, body):
+def send_email(sender_name, sender_email, sender_password, receiver_email, subject, body, cc_email=None):
     """
     send_email 的 Docstring
 
+    :param sender_name: 发件人显示名
     :param sender_email: 发件人邮箱
     :param sender_password: 发件人密码/授权码
     :param receiver_email: 收件人邮箱
+    :param cc_email: 抄送人邮箱
     :param subject: 邮件主题
     :param body: 邮件正文（Markdown 格式）
     """
     # 创建邮件对象
     message = MIMEMultipart("alternative")
-    message["From"] = sender_email
+    if sender_name:
+        message["From"] = formataddr((str(Header(sender_name, "utf-8")), sender_email))
+    else:
+        message["From"] = sender_email
     message["To"] = receiver_email
+    if cc_email:
+        message["Cc"] = cc_email
     message["Subject"] = subject
 
     # 将 Markdown 转换为 HTML
@@ -129,29 +138,22 @@ def send_email(sender_email, sender_password, receiver_email, subject, body):
     # 添加 HTML 版本
     message.attach(MIMEText(styled_html, "html", "utf-8"))
 
-    server = None
-    try:
-        # 连接到 SMTP 服务器
-        server = smtplib.SMTP_SSL("smtp.exmail.qq.com", 465)
+    # 连接到 SMTP 服务器
+    with smtplib.SMTP_SSL("smtp.exmail.qq.com", 465) as server:
         server.login(sender_email, sender_password)
 
         # 发送邮件
         server.send_message(message)
-        print("邮件发送成功!")
-
-    except Exception as e:
-        print(f"邮件发送失败: {e}")
-    finally:
-        if server is not None:
-            server.quit()
 
 
 # 使用示例
 if __name__ == "__main__":
     send_email(
+        sender_name=None,
         sender_email="rbmom@ronbaymat.com",
         sender_password="GY4.0-mom",
         receiver_email=",".join(["lixin02@ronbaymat.com"]),
+        cc_email=None,
         subject="测试邮件",
         body="""
 #### (1) 2026年将发布人形机器人与具身智能综合标准化体系建设指南

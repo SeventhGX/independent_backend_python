@@ -1,10 +1,19 @@
 import asyncio
 from app.repositories import articleRepo
-from app.models.article import ArticleBody, ArticleQueryBody, ArticleDateRangeBody
+from app.models.article import ArticleBody, ArticleQueryBody, ArticleDateRangeBody, MailDataBody
 from app.models.tables.databaseTables import Article
 from datetime import date
 import markdown
 from app.utils.crawler import Crawler
+from app.utils.mail import send_email
+
+
+def _normalize_receiver_emails(receiver_email: str | list[str]) -> list[str]:
+    if isinstance(receiver_email, str):
+        candidates = receiver_email.split(",")
+    else:
+        candidates = receiver_email
+    return [email.strip() for email in candidates if email.strip()]
 
 
 async def get_all_articles():
@@ -137,6 +146,25 @@ async def trans_md_to_html(md_content: str):
     """
 
     return {"data": styled_html}
+
+
+async def send_mail(mail_data_body: MailDataBody):
+    receiver_emails = _normalize_receiver_emails(mail_data_body.receiver_email)
+    if not receiver_emails:
+        raise ValueError("收件人邮箱不能为空")
+    cc_emails = _normalize_receiver_emails(mail_data_body.cc_email)
+
+    await asyncio.to_thread(
+        send_email,
+        sender_name=mail_data_body.sender_name,
+        sender_email=mail_data_body.sender_email,
+        sender_password=mail_data_body.sender_password,
+        receiver_email=", ".join(receiver_emails),
+        cc_email=", ".join(cc_emails) if cc_emails else None,
+        subject=mail_data_body.subject,
+        body=mail_data_body.body,
+    )
+    return {"data": {"sent": True, "receiver_email": receiver_emails, "cc_email": cc_emails}}
 
 
 async def add_article_by_url(url: str, crawler_type: str = "doubao", **kwargs):

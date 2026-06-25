@@ -23,9 +23,11 @@ class ArticleQueryBody(BaseModel):
 
 
 class MailDataBody(BaseModel):
+    sender_name: str | None = None
     sender_email: str = "rbmom@ronbaymat.com"
     sender_password: str = "GY4.0-mom"
     receiver_email: str | list[str] = []
+    cc_email: str | list[str] = []
     subject: str = "邮件主题"
     body: str = ""
 
