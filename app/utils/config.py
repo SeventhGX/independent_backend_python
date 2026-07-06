@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     DOUBAO_API_KEY: str
     DOUBAO_CRAWLER_BOT_ID: str
     GPT_API_KEY: str
+    QWEN_EMBEDDING_API_KEY: str
     DATABASE_HOST: str
     DATABASE_PORT: int
     DATABASE_USER: str
