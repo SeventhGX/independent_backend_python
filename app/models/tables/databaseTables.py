@@ -84,6 +84,7 @@ class Knowledge(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID
     file_id: uuid.UUID
+    is_embedded: bool = False
     create_time: datetime | None = Field(default_factory=datetime.now)
 
 
