@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import datetime
 import uuid
 
 
@@ -8,3 +9,4 @@ class KnowledgeResponse(BaseModel):
     filename: str | None
     file_type: str | None
     is_embedded: bool
+    create_time: datetime | None

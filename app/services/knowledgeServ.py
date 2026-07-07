@@ -36,6 +36,7 @@ async def upload_files(files: list[UploadFile], user_id: uuid.UUID):
                 if saved_file.file_type
                 else None,
                 is_embedded=saved_knowledge.is_embedded,
+                create_time=saved_knowledge.create_time,
             )
         )
     return uploaded_files
@@ -52,6 +53,7 @@ async def get_all_knowledge(user_id: uuid.UUID):
             if file.file_type
             else None,
             is_embedded=knowledge.is_embedded,
+            create_time=knowledge.create_time,
         )
         for knowledge, file in knowledge_files
     ]
