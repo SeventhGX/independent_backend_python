@@ -1,5 +1,6 @@
 from datetime import datetime, date
 import uuid
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import SQLModel, Field
@@ -77,3 +78,19 @@ class File(SQLModel, table=True):
     filename: str | None = None
     file_type: str | None = None
     data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+
+
+class Knowledge(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID
+    file_id: uuid.UUID
+    is_embedded: bool = False
+    create_time: datetime | None = Field(default_factory=datetime.now)
+
+
+class Chunks(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    file_id: uuid.UUID
+    chunk_index: int
+    content: str
+    embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))
