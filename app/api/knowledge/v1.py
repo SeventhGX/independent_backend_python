@@ -3,6 +3,7 @@ from app.services import knowledgeServ
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
 from fastapi import UploadFile, File
+import uuid
 
 router = APIRouter(prefix="/knowledge/v1")
 
@@ -25,3 +26,8 @@ async def get_all_knowledge(current_user=Depends(get_current_active_user)):
         "code": 200,
         "data": knowledge_list,
     }
+
+
+@router.post("/embedding_files")
+async def embedding_files(fileids: list[uuid.UUID], current_user=Depends(get_current_active_user)):
+    pass

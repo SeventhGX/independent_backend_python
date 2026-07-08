@@ -23,5 +23,6 @@ def select_knowledge_by_user_id(user_id: uuid.UUID):
             select(Knowledge, File)
             .join(File, col(Knowledge.file_id) == File.id)
             .where(Knowledge.user_id == user_id)
+            .order_by(col(Knowledge.create_time).desc())
         )
         return session.exec(statement).all()
