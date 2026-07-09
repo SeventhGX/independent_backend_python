@@ -92,5 +92,6 @@ class Chunks(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     file_id: uuid.UUID
     chunk_index: int
+    meta_data: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     content: str
     embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))

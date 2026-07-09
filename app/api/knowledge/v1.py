@@ -30,4 +30,9 @@ async def get_all_knowledge(current_user=Depends(get_current_active_user)):
 
 @router.post("/embedding_files")
 async def embedding_files(fileids: list[uuid.UUID], current_user=Depends(get_current_active_user)):
-    pass
+    embedded_files = await knowledgeServ.embedding_files(fileids, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": embedded_files,
+    }
