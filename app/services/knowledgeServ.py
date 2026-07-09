@@ -76,6 +76,8 @@ def chunk_files(file_ids: list[uuid.UUID]):
                 if file.file_type
                 else None,
             },
+            chunk_size=600,
+            chunk_overlap=80,
         )
         chunked_files.append((file.id, chunks))
     return chunked_files
