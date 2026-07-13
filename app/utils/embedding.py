@@ -10,8 +10,13 @@ from markitdown import MarkItDown
 markitdown = MarkItDown()
 QWEN_EMBEDDING_BATCH_SIZE = 10
 
+# ---------------------------------------------------------------------------
+# 通义千问向量化工具
+# ---------------------------------------------------------------------------
+
 
 async def qwen_embedding_texts(input_texts: list[str]):
+    """批量生成文本向量，按固定批大小分批调用 Qwen Embedding API。"""
     if not input_texts:
         return []
 
@@ -29,12 +34,14 @@ async def qwen_embedding_texts(input_texts: list[str]):
         return embeddings
 
 
-async def qwen_embedding_text(input_text: list[str]):
-    embeddings = await qwen_embedding_texts(input_text)
+async def qwen_embedding_text(input_text: str):
+    """生成单条文本向量，返回批量接口的第一条结果。"""
+    embeddings = await qwen_embedding_texts([input_text])
     return embeddings[0]
 
 
 def qwen_embedding_multi(text: str | None = None, image: str | None = None, video: str | None = None):
+    """调用 DashScope 多模态向量接口，支持文本、图片和视频输入。"""
     input_data = [{"text": text}, {"image": image}, {"video": video}]
     dashscope.MultiModalEmbedding.call(
         # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx",
@@ -47,13 +54,20 @@ def qwen_embedding_multi(text: str | None = None, image: str | None = None, vide
     )
 
 
+# ---------------------------------------------------------------------------
+# 文件文本提取工具
+# ---------------------------------------------------------------------------
+
+
 def _matches_file_type(file_type: str, accepted_file_types: set[str]) -> bool:
+    """判断 MIME 类型或后缀形式的文件类型是否命中允许集合。"""
     return file_type in accepted_file_types or any(
         file_type.endswith(f"/{accepted_file_type}") for accepted_file_type in accepted_file_types
     )
 
 
 def extract_markdown(file_data: bytes, file_type: str | None, file_name: str | None) -> str:
+    """从 txt、md、docx 文件字节中提取 Markdown 文本。"""
     normalized_file_type = (file_type or "").lower()
     normalized_file_name = (file_name or "").lower()
 
@@ -78,7 +92,13 @@ def extract_markdown(file_data: bytes, file_type: str | None, file_name: str | N
 
 
 def extract_text(file_data: bytes, file_type: str | None, file_name: str | None) -> str:
+    """提取文件文本内容，目前复用 Markdown 提取逻辑。"""
     return extract_markdown(file_data, file_type, file_name)
+
+
+# ---------------------------------------------------------------------------
+# 文本切分工具
+# ---------------------------------------------------------------------------
 
 
 def chunk_markdown(
@@ -87,6 +107,7 @@ def chunk_markdown(
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
 ) -> list[Document]:
+    """按 Markdown 标题优先切分文本，超长段落再递归切分为 Document。"""
     markdown_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[
             ("#", "Header 1"),
@@ -128,6 +149,7 @@ def chunk_markdown(
 
 
 def chunk_text(text: str, chunk_size: int = 600, chunk_overlap: int = 80) -> list[str]:
+    """按字符长度递归切分普通文本，返回字符串片段列表。"""
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,

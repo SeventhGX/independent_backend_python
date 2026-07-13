@@ -2,6 +2,10 @@ import logging
 import time
 from logging.handlers import TimedRotatingFileHandler
 
+# ---------------------------------------------------------------------------
+# 日志格式化器
+# ---------------------------------------------------------------------------
+
 
 class ColoredFormatter(logging.Formatter):
     """自定义的带颜色的日志格式化器"""
@@ -17,6 +21,7 @@ class ColoredFormatter(logging.Formatter):
     RESET = "\033[0m"  # 重置颜色
 
     def format(self, record):
+        """为终端日志级别添加 ANSI 颜色，并在格式化后恢复原始级别名。"""
         # 保存原始的 levelname
         original_levelname = record.levelname
         # 添加颜色
@@ -28,6 +33,11 @@ class ColoredFormatter(logging.Formatter):
         record.levelname = original_levelname
         return result
 
+
+
+    # ---------------------------------------------------------------------------
+    # 全局日志实例
+    # ---------------------------------------------------------------------------
 
 logger = logging.getLogger("app")
 logger.setLevel(logging.DEBUG)
