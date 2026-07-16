@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.services import knowledgeServ
+from app.models.knowledge import RagChatRequest, RagRetrieveRequest
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
 from fastapi import UploadFile, File
@@ -35,4 +36,24 @@ async def embedding_files(fileids: list[uuid.UUID], current_user=Depends(get_cur
         "message": "success",
         "code": 200,
         "data": embedded_files,
+    }
+
+
+@router.post("/retrieve")
+async def retrieve_chunks(request: RagRetrieveRequest, current_user=Depends(get_current_active_user)):
+    chunks = await knowledgeServ.retrieve_chunks(request, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": chunks,
+    }
+
+
+@router.post("/chat")
+async def rag_chat(request: RagChatRequest, current_user=Depends(get_current_active_user)):
+    answer = await knowledgeServ.rag_chat(request, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": answer,
     }
