@@ -3,7 +3,14 @@ import uuid
 from fastapi import UploadFile
 from openai import AsyncOpenAI
 
-from app.models.knowledge import KnowledgeResponse, RagChatRequest, RagChatResponse, RagChunkResponse, RagRetrieveRequest
+from app.models.knowledge import (
+    DeleteKnowledgeFilesResponse,
+    KnowledgeResponse,
+    RagChatRequest,
+    RagChatResponse,
+    RagChunkResponse,
+    RagRetrieveRequest,
+)
 from app.models.tables.databaseTables import Chunks, File, Knowledge
 from app.repositories import knowledgeRepo, fileRepo
 from app.utils.config import settings
@@ -63,6 +70,14 @@ async def get_all_knowledge(user_id: uuid.UUID):
     ]
 
 
+async def delete_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    deleted_file_ids = list(knowledgeRepo.delete_knowledge_files(file_ids, user_id))
+    return DeleteKnowledgeFilesResponse(
+        deleted_file_ids=deleted_file_ids,
+        deleted_count=len(deleted_file_ids),
+    )
+
+
 def chunk_files(file_ids: list[uuid.UUID]):
     files = fileRepo.select_files_by_ids(file_ids)
     chunked_files = []
@@ -94,7 +109,9 @@ async def embedding_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
     embedded_files = []
     for file_id, chunks in chunked_files:
         valid_chunks = [chunk for chunk in chunks if chunk.page_content.strip()]
-        embeddings = await qwen_embedding_texts([chunk.page_content for chunk in valid_chunks]) if valid_chunks else []
+        embeddings = (
+            await qwen_embedding_texts([chunk.page_content for chunk in valid_chunks]) if valid_chunks else []
+        )
         chunk_rows = [
             Chunks(
                 file_id=file_id,
@@ -154,7 +171,8 @@ async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
     ]
     async with AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL) as client:
         completion = await client.chat.completions.create(
-            model=request.model,
+            # model=request.model,
+            model="deepseek-v4-pro",
             messages=messages,  # type: ignore
             temperature=request.temperature,
         )

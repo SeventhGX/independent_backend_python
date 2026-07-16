@@ -72,3 +72,23 @@ def search_similar_chunks(
         if file_ids:
             statement = statement.where(col(Chunks.file_id).in_(file_ids))
         return session.exec(statement).all()
+
+
+def delete_knowledge_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    if not file_ids:
+        return []
+
+    with Session(engine) as session:
+        owned_file_ids = session.exec(
+            select(Knowledge.file_id)
+            .where(Knowledge.user_id == user_id)
+            .where(col(Knowledge.file_id).in_(file_ids))
+        ).all()
+        if not owned_file_ids:
+            return []
+
+        session.exec(delete(Chunks).where(col(Chunks.file_id).in_(owned_file_ids)))
+        session.exec(delete(Knowledge).where(col(Knowledge.file_id).in_(owned_file_ids)))
+        session.exec(delete(File).where(col(File.id).in_(owned_file_ids)))
+        session.commit()
+        return owned_file_ids

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.services import knowledgeServ
-from app.models.knowledge import RagChatRequest, RagRetrieveRequest
+from app.models.knowledge import DeleteKnowledgeFilesRequest, RagChatRequest, RagRetrieveRequest
 from app.utils.auth import get_current_active_user
 from fastapi import Depends
 from fastapi import UploadFile, File
@@ -26,6 +26,16 @@ async def get_all_knowledge(current_user=Depends(get_current_active_user)):
         "message": "success",
         "code": 200,
         "data": knowledge_list,
+    }
+
+
+@router.post("/delete_files")
+async def delete_files(request: DeleteKnowledgeFilesRequest, current_user=Depends(get_current_active_user)):
+    deleted_files = await knowledgeServ.delete_files(request.file_ids, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": deleted_files,
     }
 
 
