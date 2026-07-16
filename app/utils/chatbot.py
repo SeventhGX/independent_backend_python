@@ -3,10 +3,14 @@ from openai import OpenAI, AsyncOpenAI
 import httpx
 import json
 
+# ---------------------------------------------------------------------------
+# 模型适配器
+# ---------------------------------------------------------------------------
+
 
 class DeepSeekModel:
     """
-    对话实例
+    DeepSeek 对话模型适配器，封装同步/异步客户端与上下文消息。
     """
 
     def __init__(
@@ -67,19 +71,21 @@ class DeepSeekModel:
 
 class DouBaoModel:
     """
-    豆包
+    豆包模型适配器预留类，后续可补充豆包对话能力。
     """
 
     def __init__(self, api_key: str = settings.DOUBAO_API_KEY) -> None:
+        """初始化豆包模型客户端。"""
         pass
 
     async def async_chat_stream(self, model: str, messages: dict, **kwargs):
+        """预留豆包异步流式对话接口。"""
         pass
 
 
 class OpenAIModel:
     """
-    GPT模型
+    OpenAI 兼容模型适配器，用于通过聚合 API 调用 GPT/Gemini 等模型。
     """
 
     def __init__(self, api_key: str = settings.GPT_API_KEY) -> None:
@@ -128,6 +134,10 @@ model_dict = {
     "GPT": OpenAIModel,
     "Gemini": OpenAIModel,
 }
+
+# ---------------------------------------------------------------------------
+# 统一聊天入口
+# ---------------------------------------------------------------------------
 
 
 class Chatbot:

@@ -417,7 +417,7 @@ async def export_session_to_word(session_id: uuid.UUID, user_id: uuid.UUID):
             except ValueError:
                 continue
 
-    image_file_map = {str(file.id): file for file in fileRepo.select_files_by_ids(image_uuid_list)}
+    image_file_map = {str(file.id): file for file in fileRepo.select_files_by_ids(image_uuid_list)}  # type: ignore
 
     document = Document()
     _set_document_default_fonts(document)

@@ -1,13 +1,17 @@
 import uuid
 
 from fastapi import UploadFile
+from openai import AsyncOpenAI
 
-from app.models.tables.databaseTables import File, Knowledge
-from app.models.knowledge import KnowledgeResponse
-from app.repositories import knowledgeRepo
+from app.models.knowledge import KnowledgeResponse, RagChatRequest, RagChatResponse, RagChunkResponse, RagRetrieveRequest
+from app.models.tables.databaseTables import Chunks, File, Knowledge
+from app.repositories import knowledgeRepo, fileRepo
+from app.utils.config import settings
+from app.utils.embedding import qwen_embedding_text, qwen_embedding_texts, extract_markdown, chunk_markdown
 
 
 KNOWLEDGE_FILE_TYPE_PREFIX = "knowledge"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
 def _build_knowledge_file_type(content_type: str | None):
@@ -57,3 +61,102 @@ async def get_all_knowledge(user_id: uuid.UUID):
         )
         for knowledge, file in knowledge_files
     ]
+
+
+def chunk_files(file_ids: list[uuid.UUID]):
+    files = fileRepo.select_files_by_ids(file_ids)
+    chunked_files = []
+    for file in files:
+        if not file or not file.data:
+            continue
+        # text_content = file.data.decode("utf-8", errors="ignore")
+        extracted_text = extract_markdown(file.data, file.file_type, file.filename)
+        chunks = chunk_markdown(
+            extracted_text,
+            metadata={
+                "filename": file.filename,
+                "file_type": file.file_type.replace(f"{KNOWLEDGE_FILE_TYPE_PREFIX}/", "")
+                if file.file_type
+                else None,
+            },
+            chunk_size=600,
+            chunk_overlap=80,
+        )
+        chunked_files.append((file.id, chunks))
+    return chunked_files
+
+
+async def embedding_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    knowledge_files = knowledgeRepo.select_knowledge_by_file_ids(file_ids, user_id)
+    file_ids_to_embed = [knowledge.file_id for knowledge in knowledge_files if not knowledge.is_embedded]
+    chunked_files = chunk_files(file_ids_to_embed)
+
+    embedded_files = []
+    for file_id, chunks in chunked_files:
+        valid_chunks = [chunk for chunk in chunks if chunk.page_content.strip()]
+        embeddings = await qwen_embedding_texts([chunk.page_content for chunk in valid_chunks]) if valid_chunks else []
+        chunk_rows = [
+            Chunks(
+                file_id=file_id,
+                chunk_index=chunk_index,
+                meta_data=chunk.metadata,
+                content=chunk.page_content,
+                embedding=embedding,
+            )
+            for chunk_index, (chunk, embedding) in enumerate(zip(valid_chunks, embeddings))
+        ]
+        chunk_count = knowledgeRepo.replace_file_chunks(file_id, chunk_rows)
+        embedded_files.append({"file_id": file_id, "chunk_count": chunk_count})
+
+    return embedded_files
+
+
+async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
+    query_embedding = await qwen_embedding_text(request.query)
+    rows = knowledgeRepo.search_similar_chunks(
+        query_embedding=query_embedding,
+        user_id=user_id,
+        file_ids=request.file_ids,
+        top_k=request.top_k,
+    )
+    return [
+        RagChunkResponse(
+            chunk_id=chunk.id,
+            file_id=chunk.file_id,
+            chunk_index=chunk.chunk_index,
+            content=chunk.content,
+            meta_data=chunk.meta_data,
+            score=1 - float(distance),
+        )
+        for chunk, distance in rows
+    ]
+
+
+def _build_rag_context(chunks: list[RagChunkResponse]) -> str:
+    return "\n\n".join(
+        f"[片段 {index}]\n文件: {chunk.meta_data.get('filename') if chunk.meta_data else chunk.file_id}\n内容:\n{chunk.content}"
+        for index, chunk in enumerate(chunks, start=1)
+    )
+
+
+async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
+    chunks = await retrieve_chunks(request, user_id)
+    context = _build_rag_context(chunks)
+    messages = [
+        {
+            "role": "system",
+            "content": "你是一个严谨的知识库问答助手。请只依据给定的知识库片段回答；如果片段不足以回答，请明确说明无法从知识库中确定。",
+        },
+        {
+            "role": "user",
+            "content": f"知识库片段：\n{context or '无匹配片段'}\n\n用户问题：\n{request.query}",
+        },
+    ]
+    async with AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL) as client:
+        completion = await client.chat.completions.create(
+            model=request.model,
+            messages=messages,  # type: ignore
+            temperature=request.temperature,
+        )
+    answer = completion.choices[0].message.content or ""
+    return RagChatResponse(answer=answer, chunks=chunks)

@@ -5,10 +5,14 @@ from email.header import Header
 from email.utils import formataddr
 import markdown
 
+# ---------------------------------------------------------------------------
+# 邮件发送工具
+# ---------------------------------------------------------------------------
+
 
 def send_email(sender_name, sender_email, sender_password, receiver_email, subject, body, cc_email=None):
     """
-    send_email 的 Docstring
+    发送支持 Markdown 正文的 HTML 邮件，同时附带纯文本备用内容。
 
     :param sender_name: 发件人显示名
     :param sender_email: 发件人邮箱

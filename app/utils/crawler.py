@@ -1,4 +1,3 @@
-# 根据url获取新闻网页内容
 import asyncio
 
 from volcenginesdkarkruntime import Ark, AsyncArk
@@ -6,8 +5,14 @@ from app.utils.config import settings
 from app.models.tables.databaseTables import Article
 import json
 
+# ---------------------------------------------------------------------------
+# 豆包爬取与搜索工具
+# ---------------------------------------------------------------------------
+
 
 class DouBaoCrawler:
+    """基于豆包 Bot 的新闻网页抓取、流式对话和联网搜索工具。"""
+
     def __init__(
         self,
         api_key: str = settings.DOUBAO_API_KEY,
@@ -20,6 +25,7 @@ class DouBaoCrawler:
         self.kwargs = kwargs
 
     def crawl(self, url: str) -> Article:
+        """同步抓取指定 URL，并将 Bot 返回的 JSON 转换为 Article。"""
         completion = self.bot.bot_chat.completions.create(
             model=self.craw_bot_id,
             messages=[
@@ -40,6 +46,7 @@ class DouBaoCrawler:
         return article
 
     async def crawl_async(self, url: str) -> Article:
+        """异步抓取指定 URL，并将 Bot 返回的 JSON 转换为 Article。"""
         completion = await self.async_bot.bot_chat.completions.create(
             model=self.craw_bot_id,
             messages=[
@@ -60,7 +67,7 @@ class DouBaoCrawler:
         return article
 
     async def craw_stream(self, url: str):
-        # 发起流式请求
+        """发起网页抓取流式请求，返回原始流对象供调用方自行消费。"""
         stream = await self.async_bot.bot_chat.completions.create(  # type: ignore
             model=self.craw_bot_id,  # 替换为实际Bot ID
             messages=[{"role": "user", "content": url}],
@@ -205,28 +212,35 @@ class Crawler:
     """
 
     def __init__(self, crawler_type: str, **kwargs) -> None:
+        """根据爬虫类型创建具体爬虫实例。"""
         if crawler_type not in crawler_dict:
             raise ValueError(f"Unsupported crawler model: {crawler_type}")
         self.crawler = crawler_dict[crawler_type](**kwargs)
 
     def crawl(self, url: str) -> Article:
+        """同步抓取 URL 内容。"""
         return self.crawler.crawl(url)
 
     async def crawl_async(self, url: str) -> Article:
+        """异步抓取 URL 内容。"""
         return await self.crawler.crawl_async(url)
 
     async def craw_stream(self, url: str):
+        """返回 URL 抓取的原始流式响应。"""
         return await self.crawler.craw_stream(url)
 
     async def craw_stream_generator(self, url: str):
+        """以 SSE 格式逐块转发 URL 抓取结果。"""
         async for chunk in self.crawler.craw_stream_generator(url):
             yield chunk
 
     async def chat_stream_generator(self, messages: list[dict]):
+        """以 SSE 格式逐块转发通用对话结果。"""
         async for chunk in self.crawler.chat_stream_generator(messages):
             yield chunk
 
     async def search_stream_generator(self, query: str):
+        """以 SSE 格式逐块转发联网搜索结果。"""
         async for chunk in self.crawler.search_stream_generator(query):
             yield chunk
 

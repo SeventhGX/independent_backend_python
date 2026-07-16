@@ -5,10 +5,20 @@ from app.models.tables.databaseTables import *
 
 from pwdlib import PasswordHash
 
+# ---------------------------------------------------------------------------
+# 数据库连接
+# ---------------------------------------------------------------------------
+
 engine = create_engine(str(settings.DATABASE_URI))
 
 
+# ---------------------------------------------------------------------------
+# 数据库初始化
+# ---------------------------------------------------------------------------
+
+
 def init_db():
+    """创建数据库表结构，并在缺失时初始化默认管理员账号。"""
     logger.debug(settings.DATABASE_URI)
     logger.info("初始化数据库...")
     SQLModel.metadata.create_all(engine)
@@ -31,6 +41,8 @@ def init_db():
             logger.info("数据库初始化完成！")
     logger.info("数据库初始化完成！")
 
+
+# 根据配置决定应用启动时是否自动执行建表和默认账号初始化。
 if settings.INITIALIZE_DB:
     init_db()
 
