@@ -1,3 +1,5 @@
+import base64
+import binascii
 from email import policy
 from email.parser import BytesParser
 import json
@@ -12,6 +14,7 @@ from app.api.system.systemApi import router as system_router
 from app.api.ai.v1 import router as ai_router
 from app.api.ai.v2 import router as ai_router_v2
 from app.api.knowledge.v1 import router as knowledge_router
+from app.api.docs.api import router as docs_router
 from app.utils.log import logger
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,6 +62,12 @@ def _format_request_body_for_log(body: bytes, content_type: str) -> str:
     # 文件上传接口：multipart/form-data 只记录文件字段、文件名和文件大小，避免把上传文件写进日志。
     if content_type.lower().startswith("multipart/form-data"):
         return _summarize_multipart_body(body, content_type)
+    if "application/json" in content_type.lower():
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            return body.decode("utf-8", errors="replace")
+        return json.dumps(_replace_image_data(payload), ensure_ascii=False)
     return body.decode("utf-8", errors="replace")
 
 
@@ -76,6 +85,28 @@ def _get_logged_data_size(data) -> int:
 
 def _looks_like_file_response(value: dict) -> bool:
     return "id" in value and "filename" in value and "file_type" in value and "data" in value
+
+
+def _get_logged_image_size(data) -> int:
+    if isinstance(data, str):
+        encoded_data = data.split(",", 1)[1] if data.startswith("data:") and "," in data else data
+        try:
+            return len(base64.b64decode(encoded_data, validate=True))
+        except (binascii.Error, ValueError):
+            pass
+    return _get_logged_data_size(data)
+
+
+def _replace_image_data(value):
+    if isinstance(value, list):
+        return [_replace_image_data(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    return {
+        key: {"size": _get_logged_image_size(item)} if key == "image_data" else _replace_image_data(item)
+        for key, item in value.items()
+    }
 
 
 def _replace_file_response_data(value):
@@ -115,6 +146,18 @@ def _summarize_download_response(body: bytes, content_type: str, content_disposi
     )
 
 
+def _summarize_image_response(body: bytes, content_type: str, content_disposition: str) -> str:
+    return json.dumps(
+        {
+            "image": True,
+            "filename": _extract_download_filename(content_disposition),
+            "media_type": content_type,
+            "size": len(body),
+        },
+        ensure_ascii=False,
+    )
+
+
 def _format_response_body_for_log(body: bytes, content_type: str, headers) -> str:
     if not body:
         return ""
@@ -123,6 +166,10 @@ def _format_response_body_for_log(body: bytes, content_type: str, headers) -> st
     # 文件下载接口：带 attachment 的二进制响应只记录文件名、类型和大小，避免把下载内容写进日志。
     if "attachment" in content_disposition.lower():
         return _summarize_download_response(body, content_type, content_disposition)
+
+    # 图片预览和缩略图响应只记录元数据，避免将完整二进制内容写入日志。
+    if content_type.lower().startswith("image/"):
+        return _summarize_image_response(body, content_type, content_disposition)
 
     if "application/json" not in content_type.lower():
         return body.decode("utf-8", errors="replace")
@@ -213,3 +260,4 @@ app.include_router(recipient_router, tags=["recipients"])
 app.include_router(ai_router, tags=["ai"])
 app.include_router(ai_router_v2, tags=["ai_v2"])
 app.include_router(knowledge_router, tags=["knowledge"])
+app.include_router(docs_router, tags=["docs"])

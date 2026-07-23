@@ -95,3 +95,22 @@ class Chunks(SQLModel, table=True):
     meta_data: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     content: str
     embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))
+
+
+class Docs(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    docs_name: str
+    docs_desc: str | None = None
+    content: str
+    create_time: datetime | None = Field(default_factory=datetime.now)
+    update_time: datetime | None = Field(default_factory=datetime.now)
+
+
+class DocsImage(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    docs_id: uuid.UUID | None = None
+    image_name: str
+    image_desc: str | None = None
+    image_data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    create_time: datetime | None = Field(default_factory=datetime.now)
+    create_by: uuid.UUID | None = None
