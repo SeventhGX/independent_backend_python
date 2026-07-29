@@ -165,16 +165,20 @@ class DocsImage(SQLModel, table=True):
     create_by: uuid.UUID | None = None
 
 
-# class TimeSeriesDataSet(SQLModel, table=True):
-#     """
-#     时间序列数据集
-#     """
+class LstmResult(SQLModel, table=True):
+    """LSTM demo 的训练参数、损失与预测数据。"""
 
-#     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-#     name: str
-#     description: str | None = None
-#     is_xy: bool = False
-#     data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-#     y_data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-#     x_data: list[object] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-#     create_time: datetime | None = Field(default_factory=datetime.now)
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    dataset_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    model_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    training_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    metrics: dict = Field(sa_column=Column(JSONB, nullable=False))
+    train_losses: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    validation_losses: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    observed_time: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    observed_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    future_time: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    forecast_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    expected_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    create_time: datetime = Field(default_factory=datetime.now)

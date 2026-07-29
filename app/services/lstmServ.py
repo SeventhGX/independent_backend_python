@@ -1,12 +1,10 @@
 import asyncio
 import csv
 import io
-import threading
 import time as time_module
 import uuid
 from collections.abc import Sized
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import cast
 
 import numpy as np
@@ -17,21 +15,8 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from app.models.lstm import LstmTrainingMetrics, LstmTrainRequest
-
-RESULT_TTL = timedelta(hours=1)
-MAX_CACHED_RESULTS = 20
-
-
-@dataclass(slots=True)
-class LstmResultArtifacts:
-    result_id: uuid.UUID
-    user_id: uuid.UUID
-    created_at: datetime
-    expires_at: datetime
-    metrics: LstmTrainingMetrics
-    image: bytes
-    csv: bytes
-    excel: bytes
+from app.models.tables.databaseTables import LstmResult
+from app.repositories import lstmRepo
 
 
 class TimeSeriesDataset(Dataset):
@@ -89,8 +74,6 @@ class LstmPredictor(nn.Module):
         return self.head(decoder_input).squeeze(-1)
 
 
-_results: dict[uuid.UUID, LstmResultArtifacts] = {}
-_results_lock = threading.Lock()
 _training_semaphore = asyncio.Semaphore(1)
 
 
@@ -271,7 +254,9 @@ def _build_excel(
     expected: np.ndarray,
     train_losses: list[float],
     validation_losses: list[float],
-    request: LstmTrainRequest,
+    dataset_params: dict,
+    model_params: dict,
+    training_params: dict,
 ) -> bytes:
     workbook = Workbook()
     series_sheet = workbook.active
@@ -299,52 +284,68 @@ def _build_excel(
 
     params_sheet = workbook.create_sheet("parameters")
     params_sheet.append(("group", "name", "value"))
-    request_data = request.model_dump()
+    request_data = {
+        "dataset": dataset_params,
+        "model": model_params,
+        "training": training_params,
+    }
     for group, values in request_data.items():
-        if isinstance(values, dict):
-            for name, value in values.items():
-                params_sheet.append((group, name, value))
-        else:
-            params_sheet.append(("forecast", group, values))
+        for name, value in values.items():
+            params_sheet.append((group, name, value))
 
     output = io.BytesIO()
     workbook.save(output)
     return output.getvalue()
 
 
-def _cleanup_results(now: datetime) -> None:
-    expired_ids = [
-        result_id for result_id, result in _results.items() if result.expires_at <= now
-    ]
-    for result_id in expired_ids:
-        del _results[result_id]
-
-
-def _store_result(result: LstmResultArtifacts) -> None:
-    with _results_lock:
-        _cleanup_results(result.created_at)
-        if len(_results) >= MAX_CACHED_RESULTS:
-            oldest_id = min(_results, key=lambda key: _results[key].created_at)
-            del _results[oldest_id]
-        _results[result.result_id] = result
-
-
 def get_result(
     result_id: uuid.UUID,
     user_id: uuid.UUID,
-) -> LstmResultArtifacts | None:
-    with _results_lock:
-        _cleanup_results(datetime.now(UTC))
-        result = _results.get(result_id)
-        if result is None or result.user_id != user_id:
-            return None
-        return result
+) -> LstmResult | None:
+    return lstmRepo.select_result_by_id_and_user_id(result_id, user_id)
+
+
+def render_result_image(result: LstmResult) -> bytes:
+    return _render_image(
+        np.asarray(result.observed_time, dtype=float),
+        np.asarray(result.observed_data, dtype=float),
+        np.asarray(result.future_time, dtype=float),
+        np.asarray(result.forecast_data, dtype=float),
+        np.asarray(result.expected_data, dtype=float),
+        result.train_losses,
+        result.validation_losses,
+    )
+
+
+def export_result_csv(result: LstmResult) -> bytes:
+    return _build_csv(
+        np.asarray(result.observed_time, dtype=float),
+        np.asarray(result.observed_data, dtype=float),
+        np.asarray(result.future_time, dtype=float),
+        np.asarray(result.forecast_data, dtype=float),
+        np.asarray(result.expected_data, dtype=float),
+    )
+
+
+def export_result_excel(result: LstmResult) -> bytes:
+    return _build_excel(
+        np.asarray(result.observed_time, dtype=float),
+        np.asarray(result.observed_data, dtype=float),
+        np.asarray(result.future_time, dtype=float),
+        np.asarray(result.forecast_data, dtype=float),
+        np.asarray(result.expected_data, dtype=float),
+        result.train_losses,
+        result.validation_losses,
+        result.dataset_params,
+        result.model_params,
+        result.training_params,
+    )
 
 
 def _train_and_store_sync(
     request: LstmTrainRequest,
     user_id: uuid.UUID,
-) -> LstmResultArtifacts:
+) -> LstmResult:
     synthesis = request.synthesis
     model_params = request.model
     training = request.training
@@ -432,41 +433,30 @@ def _train_and_store_sync(
         training_seconds=training_seconds,
         device=str(device),
     )
-    created_at = datetime.now(UTC)
-    result = LstmResultArtifacts(
-        result_id=uuid.uuid4(),
+    result = LstmResult(
         user_id=user_id,
-        created_at=created_at,
-        expires_at=created_at + RESULT_TTL,
-        metrics=metrics,
-        image=_render_image(
-            observed_time,
-            observed,
-            future_time,
-            forecast,
-            expected,
-            train_losses,
-            validation_losses,
-        ),
-        csv=_build_csv(observed_time, observed, future_time, forecast, expected),
-        excel=_build_excel(
-            observed_time,
-            observed,
-            future_time,
-            forecast,
-            expected,
-            train_losses,
-            validation_losses,
-            request,
-        ),
+        dataset_params={
+            **request.synthesis.model_dump(mode="json"),
+            "forecast_horizon": request.forecast_horizon,
+        },
+        model_params=request.model.model_dump(mode="json"),
+        training_params=request.training.model_dump(mode="json"),
+        metrics=metrics.model_dump(mode="json"),
+        train_losses=[float(value) for value in train_losses],
+        validation_losses=[float(value) for value in validation_losses],
+        observed_time=observed_time.astype(float).tolist(),
+        observed_data=observed.astype(float).tolist(),
+        future_time=future_time.astype(float).tolist(),
+        forecast_data=forecast.astype(float).tolist(),
+        expected_data=expected.astype(float).tolist(),
+        create_time=datetime.now(UTC),
     )
-    _store_result(result)
-    return result
+    return lstmRepo.insert_result(result)
 
 
 async def train_and_store(
     request: LstmTrainRequest,
     user_id: uuid.UUID,
-) -> LstmResultArtifacts:
+) -> LstmResult:
     async with _training_semaphore:
         return await asyncio.to_thread(_train_and_store_sync, request, user_id)

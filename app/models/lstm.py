@@ -69,7 +69,6 @@ class LstmResultLinks(BaseModel):
 class LstmTrainResult(BaseModel):
     result_id: uuid.UUID
     created_at: datetime
-    expires_at: datetime
     metrics: LstmTrainingMetrics
     links: LstmResultLinks
 

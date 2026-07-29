@@ -7,6 +7,7 @@ from app.models.lstm import (
     LstmParamNode,
     LstmResultLinks,
     LstmTrainEnvelope,
+    LstmTrainingMetrics,
     LstmTrainRequest,
     LstmTrainResult,
 )
@@ -212,13 +213,12 @@ async def train_lstm(request: LstmTrainRequest, current_user: UserDep):
             detail=str(exc),
         ) from exc
 
-    result_id = result.result_id
+    result_id = result.id
     return LstmTrainEnvelope(
         data=LstmTrainResult(
             result_id=result_id,
-            created_at=result.created_at,
-            expires_at=result.expires_at,
-            metrics=result.metrics,
+            created_at=result.create_time,
+            metrics=LstmTrainingMetrics.model_validate(result.metrics),
             links=LstmResultLinks(
                 image=f"/demo/lstm/results/{result_id}/image",
                 csv=f"/demo/lstm/results/{result_id}/csv",
@@ -233,7 +233,7 @@ def _get_result_or_404(result_id: uuid.UUID, current_user: UserDep):
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="LSTM result not found or expired",
+            detail="LSTM result not found",
         )
     return result
 
@@ -243,7 +243,7 @@ def get_lstm_result_image(result_id: uuid.UUID, current_user: UserDep):
     result = _get_result_or_404(result_id, current_user)
     filename = quote(f"lstm-{result_id}.png")
     return Response(
-        content=result.image,
+        content=lstmServ.render_result_image(result),
         media_type="image/png",
         headers={"Content-Disposition": f"inline; filename*=UTF-8''{filename}"},
     )
@@ -254,7 +254,7 @@ def download_lstm_result_csv(result_id: uuid.UUID, current_user: UserDep):
     result = _get_result_or_404(result_id, current_user)
     filename = quote(f"lstm-{result_id}.csv")
     return Response(
-        content=result.csv,
+        content=lstmServ.export_result_csv(result),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
@@ -265,7 +265,7 @@ def download_lstm_result_excel(result_id: uuid.UUID, current_user: UserDep):
     result = _get_result_or_404(result_id, current_user)
     filename = quote(f"lstm-{result_id}.xlsx")
     return Response(
-        content=result.excel,
+        content=lstmServ.export_result_excel(result),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
