@@ -26,6 +26,7 @@ dependencies = [
     "markitdown[docx]>=0.1.6",
     "torch>=2.13.0",
     "matplotlib>=3.11.1",
+    "openpyxl>=3.1.5",
 ]
 
 [[tool.uv.index]]
