@@ -165,16 +165,16 @@ class DocsImage(SQLModel, table=True):
     create_by: uuid.UUID | None = None
 
 
-class TimeSeriesDataSet(SQLModel, table=True):
-    """
-    时间序列数据集
-    """
+# class TimeSeriesDataSet(SQLModel, table=True):
+#     """
+#     时间序列数据集
+#     """
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    name: str
-    description: str | None = None
-    is_xy: bool = False
-    data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-    y_data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-    x_data: list[object] = Field(default=None, sa_column=Column(JSONB, nullable=True))
-    create_time: datetime | None = Field(default_factory=datetime.now)
+#     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+#     name: str
+#     description: str | None = None
+#     is_xy: bool = False
+#     data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
+#     y_data: list[float] = Field(default=None, sa_column=Column(JSONB, nullable=True))
+#     x_data: list[object] = Field(default=None, sa_column=Column(JSONB, nullable=True))
+#     create_time: datetime | None = Field(default_factory=datetime.now)
