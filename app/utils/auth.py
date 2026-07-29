@@ -1,14 +1,15 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
-import uuid
 
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
-from app.models.system import TokenData
 
+from app.models.system import TokenData
+from app.models.tables.databaseTables import Sys_User
 from app.repositories import systemRepo
 from app.utils.config import settings
 
@@ -136,3 +137,6 @@ async def get_current_active_user(current_user=Depends(get_current_user)):
     if current_user.del_flag:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已停用")
     return current_user
+
+
+UserDep = Annotated[Sys_User, Depends(get_current_active_user)]
