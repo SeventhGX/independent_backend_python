@@ -1,12 +1,17 @@
-from datetime import datetime, date
 import uuid
+from datetime import date, datetime
+
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column, LargeBinary
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 
 class Article(SQLModel, table=True):
+    """
+    新闻文章
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     title: str
     url: str
@@ -19,12 +24,20 @@ class Article(SQLModel, table=True):
 
 
 class Recipient(SQLModel, table=True):
+    """
+    邮件接收人
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     email: str
     name: str | None = None
 
 
 class Sys_User(SQLModel, table=True):
+    """
+    系统用户
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_code: str
     user_name: str
@@ -37,6 +50,10 @@ class Sys_User(SQLModel, table=True):
 
 
 class Chat_Session(SQLModel, table=True):
+    """
+    聊天会话
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID
     session_name: str
@@ -45,6 +62,10 @@ class Chat_Session(SQLModel, table=True):
 
 
 class Chat_Model(SQLModel, table=True):
+    """
+    聊天模型
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     model_type: str
     model: str
@@ -54,6 +75,10 @@ class Chat_Model(SQLModel, table=True):
 
 
 class Chat_Model_V2(SQLModel, table=True):
+    """
+    聊天模型 V2
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     model_type: str
     model: str
@@ -66,6 +91,10 @@ class Chat_Model_V2(SQLModel, table=True):
 
 
 class User_Model_Cfg(SQLModel, table=True):
+    """
+    用户模型参数配置
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID
     model_v2_id: uuid.UUID
@@ -73,6 +102,10 @@ class User_Model_Cfg(SQLModel, table=True):
 
 
 class File(SQLModel, table=True):
+    """
+    文件表，主要保存聊天记录中的图片与知识库中用户上传的知识文件
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     source_url: str | None = None
     filename: str | None = None
@@ -81,6 +114,10 @@ class File(SQLModel, table=True):
 
 
 class Knowledge(SQLModel, table=True):
+    """
+    知识库，记录用户上传的知识文件信息
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID
     file_id: uuid.UUID
@@ -89,6 +126,10 @@ class Knowledge(SQLModel, table=True):
 
 
 class Chunks(SQLModel, table=True):
+    """
+    知识文件切片
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     file_id: uuid.UUID
     chunk_index: int
@@ -98,6 +139,10 @@ class Chunks(SQLModel, table=True):
 
 
 class Docs(SQLModel, table=True):
+    """
+    教程文档
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     docs_name: str
     docs_desc: str | None = None
@@ -107,6 +152,10 @@ class Docs(SQLModel, table=True):
 
 
 class DocsImage(SQLModel, table=True):
+    """
+    教程文档涉及的图床
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     docs_id: uuid.UUID | None = None
     image_name: str
@@ -114,3 +163,22 @@ class DocsImage(SQLModel, table=True):
     image_data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     create_time: datetime | None = Field(default_factory=datetime.now)
     create_by: uuid.UUID | None = None
+
+
+class LstmResult(SQLModel, table=True):
+    """LSTM demo 的训练参数、损失与预测数据。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    dataset_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    model_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    training_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    metrics: dict = Field(sa_column=Column(JSONB, nullable=False))
+    train_losses: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    validation_losses: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    observed_time: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    observed_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    future_time: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    forecast_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    expected_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    create_time: datetime = Field(default_factory=datetime.now)
