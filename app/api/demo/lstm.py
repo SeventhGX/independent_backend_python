@@ -1,7 +1,11 @@
+import json
 import uuid
+from collections.abc import AsyncIterator
+from typing import cast
 from urllib.parse import quote
 
 from fastapi import HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.models.lstm import (
     LstmParamNode,
@@ -11,6 +15,7 @@ from app.models.lstm import (
     LstmTrainRequest,
     LstmTrainResult,
 )
+from app.models.tables.databaseTables import LstmResult
 from app.services import lstmServ
 from app.utils.auth import UserDep
 
@@ -40,7 +45,7 @@ def get_demo_param_list(current_user: UserDep):
                         name="time_step",
                         desc="时间步长",
                         type="number",
-                        value=50 / 1999,
+                        value=50 / 2000,
                         minimum=0,
                         maximum=1,
                     ),
@@ -199,20 +204,7 @@ def get_demo_param_list(current_user: UserDep):
     }
 
 
-@demo_router.post(
-    "/lstm/train",
-    summary="训练 LSTM 并生成预测结果",
-    response_model=LstmTrainEnvelope,
-)
-async def train_lstm(request: LstmTrainRequest, current_user: UserDep):
-    try:
-        result = await lstmServ.train_and_store(request, current_user.id)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-
+def _build_train_result(result: LstmResult) -> LstmTrainEnvelope:
     result_id = result.id
     return LstmTrainEnvelope(
         data=LstmTrainResult(
@@ -225,6 +217,49 @@ async def train_lstm(request: LstmTrainRequest, current_user: UserDep):
                 excel=f"/demo/lstm/results/{result_id}/excel",
             ),
         )
+    )
+
+
+def _format_sse(event: str, data: dict[str, object]) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+@demo_router.post(
+    "/lstm/train",
+    summary="流式训练 LSTM 并生成预测结果",
+    description=(
+        "通过 SSE 返回训练进度。依次发送 epoch（每轮 Loss）、predicting（正在预测）、"
+        "completed（最终结果）事件；运行失败时发送 error 事件。"
+    ),
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "SSE 训练进度流",
+            "content": {"text/event-stream": {}},
+        }
+    },
+)
+async def train_lstm(request: LstmTrainRequest, current_user: UserDep):
+    async def event_stream() -> AsyncIterator[str]:
+        async for event in lstmServ.train_and_store_events(request, current_user.id):
+            event_type = str(event["type"])
+            if event_type == "completed":
+                stored_result = cast(LstmResult, event["result"])
+                result = _build_train_result(stored_result)
+                yield _format_sse("completed", result.model_dump(mode="json"))
+                continue
+
+            data = {key: value for key, value in event.items() if key != "type"}
+            yield _format_sse(event_type, data)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

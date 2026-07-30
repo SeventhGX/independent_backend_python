@@ -3,7 +3,7 @@ import csv
 import io
 import time as time_module
 import uuid
-from collections.abc import Sized
+from collections.abc import AsyncIterator, Callable, Sized
 from datetime import UTC, datetime
 from typing import cast
 
@@ -11,12 +11,15 @@ import numpy as np
 import torch
 from matplotlib.figure import Figure
 from openpyxl import Workbook
+from sqlalchemy.exc import SQLAlchemyError
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from app.models.lstm import LstmTrainingMetrics, LstmTrainRequest
 from app.models.tables.databaseTables import LstmResult
 from app.repositories import lstmRepo
+
+ProgressCallback = Callable[[dict[str, object]], None]
 
 
 class TimeSeriesDataset(Dataset):
@@ -127,13 +130,14 @@ def _train_model(
     validation_loader: DataLoader,
     request: LstmTrainRequest,
     device: torch.device,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[list[float], list[float]]:
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=request.training.learning_rate)
 
     train_losses: list[float] = []
     validation_losses: list[float] = []
-    for _ in range(request.training.epochs):
+    for epoch in range(1, request.training.epochs + 1):
         model.train()
         train_total = 0.0
         for history, future_time, target in train_loader:
@@ -162,6 +166,16 @@ def _train_model(
                 )
         validation_sample_count = len(cast(Sized, validation_loader.dataset))
         validation_losses.append(validation_total / validation_sample_count)
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "type": "epoch",
+                    "epoch": epoch,
+                    "total_epochs": request.training.epochs,
+                    "train_loss": train_losses[-1],
+                    "validation_loss": validation_losses[-1],
+                }
+            )
 
     return train_losses, validation_losses
 
@@ -345,6 +359,7 @@ def export_result_excel(result: LstmResult) -> bytes:
 def _train_and_store_sync(
     request: LstmTrainRequest,
     user_id: uuid.UUID,
+    progress_callback: ProgressCallback | None = None,
 ) -> LstmResult:
     synthesis = request.synthesis
     model_params = request.model
@@ -403,9 +418,17 @@ def _train_and_store_sync(
     ).to(device)
     training_started = time_module.perf_counter()
     train_losses, validation_losses = _train_model(
-        model, train_loader, validation_loader, request, device
+        model,
+        train_loader,
+        validation_loader,
+        request,
+        device,
+        progress_callback,
     )
     training_seconds = time_module.perf_counter() - training_started
+
+    if progress_callback is not None:
+        progress_callback({"type": "predicting", "message": "正在预测中"})
 
     future_time = observed_time[-1] + synthesis.time_step * np.arange(
         1, request.forecast_horizon + 1
@@ -460,3 +483,48 @@ async def train_and_store(
 ) -> LstmResult:
     async with _training_semaphore:
         return await asyncio.to_thread(_train_and_store_sync, request, user_id)
+
+
+async def train_and_store_events(
+    request: LstmTrainRequest,
+    user_id: uuid.UUID,
+) -> AsyncIterator[dict[str, object]]:
+    async with _training_semaphore:
+        loop = asyncio.get_running_loop()
+        event_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+
+        def publish_progress(event: dict[str, object]) -> None:
+            loop.call_soon_threadsafe(event_queue.put_nowait, event)
+
+        def run_training() -> LstmResult:
+            try:
+                return _train_and_store_sync(request, user_id, publish_progress)
+            finally:
+                finished_event: dict[str, object] = {"type": "worker_finished"}
+                loop.call_soon_threadsafe(
+                    event_queue.put_nowait,
+                    finished_event,
+                )
+
+        worker = asyncio.create_task(asyncio.to_thread(run_training))
+        try:
+            while True:
+                event = await event_queue.get()
+                if event["type"] == "worker_finished":
+                    try:
+                        result = await worker
+                    except (ValueError, RuntimeError, SQLAlchemyError) as exc:
+                        message = (
+                            str(exc)
+                            if isinstance(exc, ValueError)
+                            else "训练失败，请稍后重试"
+                        )
+                        yield {"type": "error", "message": message}
+                    else:
+                        yield {"type": "completed", "result": result}
+                    break
+
+                yield event
+        finally:
+            if not worker.done():
+                await asyncio.shield(worker)
