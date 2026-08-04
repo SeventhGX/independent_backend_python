@@ -1,9 +1,11 @@
-from app.models.tables.databaseTables import Chunks, File, Knowledge
-from app.utils.database import engine
+import uuid
+from typing import Any, cast
+
 from sqlalchemy import delete
 from sqlmodel import Session, col, select
-from typing import Any, cast
-import uuid
+
+from app.models.tables.databaseTables import Chunks, File, Knowledge
+from app.utils.database import engine
 
 
 def insert_knowledge_file(file: File, knowledge: Knowledge):

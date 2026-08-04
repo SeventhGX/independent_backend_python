@@ -1,10 +1,10 @@
-from fastapi import APIRouter
-from app.services import knowledgeServ
-from app.models.knowledge import DeleteKnowledgeFilesRequest, RagChatRequest, RagRetrieveRequest
-from app.utils.auth import get_current_active_user
-from fastapi import Depends
-from fastapi import UploadFile, File
 import uuid
+
+from fastapi import APIRouter, Depends, File, UploadFile
+
+from app.models.knowledge import DeleteKnowledgeFilesRequest, RagChatRequest, RagRetrieveRequest
+from app.services import knowledgeServ
+from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/knowledge/v1")
 

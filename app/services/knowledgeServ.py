@@ -1,4 +1,6 @@
+import re
 import uuid
+from collections import Counter
 
 from fastapi import UploadFile
 from openai import AsyncOpenAI
@@ -10,15 +12,16 @@ from app.models.knowledge import (
     RagChatResponse,
     RagChunkResponse,
     RagRetrieveRequest,
+    RetrievalMethod,
 )
 from app.models.tables.databaseTables import Chunks, File, Knowledge
-from app.repositories import knowledgeRepo, fileRepo
+from app.repositories import fileRepo, knowledgeRepo
 from app.utils.config import settings
-from app.utils.embedding import qwen_embedding_text, qwen_embedding_texts, extract_markdown, chunk_markdown
-
+from app.utils.embedding import chunk_markdown, extract_markdown, qwen_embedding_text, qwen_embedding_texts
 
 KNOWLEDGE_FILE_TYPE_PREFIX = "knowledge"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+HYBRID_CANDIDATE_MULTIPLIER = 4
 
 
 def _build_knowledge_file_type(content_type: str | None):
@@ -128,14 +131,79 @@ async def embedding_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
     return embedded_files
 
 
+def _tokenize_for_keyword_search(text: str) -> list[str]:
+    tokens = []
+    for segment in re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]+", text.lower()):
+        if "\u4e00" <= segment[0] <= "\u9fff" and len(segment) > 1:
+            tokens.extend(segment[index : index + 2] for index in range(len(segment) - 1))
+        else:
+            tokens.append(segment)
+    return tokens
+
+
+def _keyword_score(query: str, content: str) -> float:
+    query_tokens = Counter(_tokenize_for_keyword_search(query))
+    if not query_tokens:
+        return 0.0
+    content_tokens = Counter(_tokenize_for_keyword_search(content))
+    matched_tokens = sum(
+        min(count, content_tokens[token]) for token, count in query_tokens.items()
+    )
+    return matched_tokens / sum(query_tokens.values())
+
+
+def _rerank_hybrid(
+    rows,
+    query: str,
+    top_k: int,
+    semantic_weight: float,
+    keyword_weight: float,
+):
+    if not rows:
+        return []
+
+    semantic_scores = [1 - float(distance) for _, distance in rows]
+    reranked_rows = []
+    for (chunk, _), semantic_score in zip(rows, semantic_scores):
+        normalized_semantic_score = max(0.0, min(1.0, semantic_score))
+        keyword_score = _keyword_score(query, chunk.content)
+        combined_score = (
+            semantic_weight * normalized_semantic_score
+            + keyword_weight * keyword_score
+        )
+        reranked_rows.append(
+            (chunk, semantic_score, keyword_score, combined_score)
+        )
+
+    return sorted(reranked_rows, key=lambda row: row[3], reverse=True)[:top_k]
+
+
 async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
     query_embedding = await qwen_embedding_text(request.query)
+    candidate_count = (
+        request.top_k * HYBRID_CANDIDATE_MULTIPLIER
+        if request.retrieval_method == RetrievalMethod.HYBRID
+        else request.top_k
+    )
     rows = knowledgeRepo.search_similar_chunks(
         query_embedding=query_embedding,
         user_id=user_id,
         file_ids=request.file_ids,
-        top_k=request.top_k,
+        top_k=candidate_count,
     )
+    if request.retrieval_method == RetrievalMethod.HYBRID:
+        reranked_rows = _rerank_hybrid(
+            rows,
+            request.query,
+            request.top_k,
+            request.semantic_weight,
+            request.keyword_weight,
+        )
+    else:
+        reranked_rows = [
+            (chunk, 1 - float(distance), None, 1 - float(distance))
+            for chunk, distance in rows
+        ]
     return [
         RagChunkResponse(
             chunk_id=chunk.id,
@@ -143,9 +211,12 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
             chunk_index=chunk.chunk_index,
             content=chunk.content,
             meta_data=chunk.meta_data,
-            score=1 - float(distance),
+            score=score,
+            semantic_score=semantic_score,
+            keyword_score=keyword_score,
+            retrieval_method=request.retrieval_method,
         )
-        for chunk, distance in rows
+        for chunk, semantic_score, keyword_score, score in reranked_rows
     ]
 
 

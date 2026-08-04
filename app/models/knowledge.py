@@ -1,6 +1,9 @@
-from pydantic import BaseModel
-from datetime import datetime
 import uuid
+from datetime import datetime
+from enum import StrEnum
+from typing import Self
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class KnowledgeResponse(BaseModel):
@@ -21,10 +24,24 @@ class DeleteKnowledgeFilesResponse(BaseModel):
     deleted_count: int
 
 
+class RetrievalMethod(StrEnum):
+    VECTOR = "vector"
+    HYBRID = "hybrid"
+
+
 class RagRetrieveRequest(BaseModel):
     query: str
     file_ids: list[uuid.UUID] | None = None
-    top_k: int = 10
+    top_k: int = Field(default=10, ge=1, le=100)
+    retrieval_method: RetrievalMethod = RetrievalMethod.VECTOR
+    semantic_weight: float = Field(default=0.7, ge=0, le=1)
+    keyword_weight: float = Field(default=0.3, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_hybrid_weights(self) -> Self:
+        if abs(self.semantic_weight + self.keyword_weight - 1) > 1e-6:
+            raise ValueError("semantic_weight 与 keyword_weight 之和必须为 1")
+        return self
 
 
 class RagChunkResponse(BaseModel):
@@ -34,6 +51,9 @@ class RagChunkResponse(BaseModel):
     content: str
     meta_data: dict | None = None
     score: float
+    semantic_score: float
+    keyword_score: float | None = None
+    retrieval_method: RetrievalMethod
 
 
 class RagChatRequest(RagRetrieveRequest):
