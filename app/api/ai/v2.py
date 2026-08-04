@@ -1,9 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+
 from app.models.ai import ChatBodyV2
 from app.services import aiServ
 from app.utils.auth import get_current_active_user
-from fastapi import Depends
 
 router = APIRouter(prefix="/ai/v2")
 

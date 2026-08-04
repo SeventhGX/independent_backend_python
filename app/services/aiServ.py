@@ -1,22 +1,27 @@
-from app.repositories import aiRepo, fileRepo
-from app.models.ai import ChatBody, ChatBodyV2
-from app.models.file import NewFileRequest
-from app.models.tables.databaseTables import Chat_Session, User_Model_Cfg, File
-from datetime import datetime
-from app.utils.chatbot import Chatbot
-from app.utils.chatbotv2 import bots
-import uuid
-import json
 import base64
 import binascii
+import json
 import re
-from PIL import Image
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime
 from io import BytesIO
+from typing import Any
+
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
+from openai import AsyncOpenAI
+from PIL import Image
+from volcenginesdkarkruntime import AsyncArk
 
+from app.models.ai import ChatBody, ChatBodyV2
+from app.models.file import NewFileRequest
+from app.models.tables.databaseTables import Chat_Model_V2, Chat_Session, File, User_Model_Cfg
+from app.repositories import aiRepo, fileRepo
+from app.utils.chatbot import Chatbot
+from app.utils.config import settings
 
 NORMAL_EN_FONT = "Times New Roman"
 NORMAL_CN_FONT = "宋体"
@@ -24,6 +29,27 @@ CODE_FONT = "Consolas"
 USER_HEADING_COLOR = RGBColor(31, 78, 121)
 ASSISTANT_HEADING_COLOR = RGBColor(83, 129, 53)
 DEFAULT_HEADING_COLOR = RGBColor(64, 64, 64)
+
+
+def _create_model_client(model_data: Chat_Model_V2) -> Any:
+    api_key = getattr(settings, model_data.key_name, None)
+    if not isinstance(api_key, str) or not api_key:
+        raise ValueError(f"API key '{model_data.key_name}' is not configured.")
+
+    if model_data.sdk_type == "openai":
+        return AsyncOpenAI(base_url=model_data.base_url, api_key=api_key)
+    if model_data.sdk_type == "volcengine":
+        return AsyncArk(api_key=api_key)
+    raise ValueError(f"Unsupported SDK type '{model_data.sdk_type}'.")
+
+
+@asynccontextmanager
+async def _model_client(model_data: Chat_Model_V2):
+    client = _create_model_client(model_data)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 def _extract_cfg_items(payload):
@@ -528,10 +554,9 @@ async def get_models_v2(user_id: uuid.UUID):
 
 async def chat_stream(model: str, messages: dict, **kwargs):
     model_data = aiRepo.select_model_v2_by_model(model)
-    if model not in bots or model_data is None:
+    if model_data is None:
         raise ValueError(f"Model '{model}' not found in database.")
-    bot = bots[model]
-    if model_data.sdk_type == "openai" or model_data.sdk_type == "volcengine":
+    async with _model_client(model_data) as bot:
         response = await bot.chat.completions.create(
             model=model,
             messages=messages,
@@ -581,14 +606,14 @@ async def compress_file_data(data: bytes) -> bytes:
 
 async def image_generate(model: str, prompt: str, **kwargs):
     model_data = aiRepo.select_model_v2_by_model(model)
-    if model not in bots or model_data is None:
+    if model_data is None:
         raise ValueError(f"Model '{model}' not found in database.")
-    bot = bots[model]
-    response = await bot.images.generate(
-        model=model,
-        prompt=prompt,
-        **kwargs,
-    )
+    async with _model_client(model_data) as bot:
+        response = await bot.images.generate(
+            model=model,
+            prompt=prompt,
+            **kwargs,
+        )
     images = []
     for img in response.data:
         if img.b64_json:
@@ -600,19 +625,19 @@ async def image_generate(model: str, prompt: str, **kwargs):
 
 async def image_edit(model: str, image: list, prompt: str, **kwargs):
     model_data = aiRepo.select_model_v2_by_model(model)
-    if model not in bots or model_data is None:
+    if model_data is None:
         raise ValueError(f"Model '{model}' not found in database.")
-    bot = bots[model]
     normalized_images = _normalize_image_inputs(image)
     # print("开始调用图像编辑接口")
     # with open("debug_input_image.png", "wb") as f:
     #     f.write(normalized_images[0])
-    response = await bot.images.edit(
-        model=model,
-        image=normalized_images,
-        prompt=prompt,
-        **kwargs,
-    )
+    async with _model_client(model_data) as bot:
+        response = await bot.images.edit(
+            model=model,
+            image=normalized_images,
+            prompt=prompt,
+            **kwargs,
+        )
     images = []
     for img in response.data:
         if img.b64_json:
