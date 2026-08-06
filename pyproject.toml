@@ -25,6 +25,7 @@ dependencies = [
     "requests>=2.34.2",
     "markitdown[docx]>=0.1.6",
     "torch>=2.13.0",
+    "scikit-learn>=1.7.1",
     "matplotlib>=3.11.1",
     "openpyxl>=3.1.5",
 ]
@@ -40,3 +41,6 @@ default = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+
+[tool.isort]
+profile = "black"

@@ -8,6 +8,7 @@ WORKDIR /app
 RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y \
     curl \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv（快速的 Python 包管理器，使用清华镜像加速）

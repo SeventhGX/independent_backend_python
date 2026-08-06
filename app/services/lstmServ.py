@@ -18,8 +18,31 @@ from torch.utils.data import DataLoader, Dataset
 from app.models.lstm import LstmTrainingMetrics, LstmTrainRequest
 from app.models.tables.databaseTables import LstmResult
 from app.repositories import lstmRepo
+from app.utils.plot import get_chinese_font
 
 ProgressCallback = Callable[[dict[str, object]], None]
+
+_LSTM_PARAMETER_LABELS = {
+    "n_samples": "样本数量(n_samples)",
+    "time_step": "时间步长(time_step)",
+    "trend_slope": "趋势斜率(trend_slope)",
+    "primary_amplitude": "主周期振幅(primary_amplitude)",
+    "primary_frequency": "主周期频率(primary_frequency)",
+    "secondary_amplitude": "次周期振幅(secondary_amplitude)",
+    "secondary_frequency": "次周期频率(secondary_frequency)",
+    "noise_std": "噪声标准差(noise_std)",
+    "seed": "随机种子(seed)",
+    "forecast_horizon": "预测步数(forecast_horizon)",
+    "sequence_length": "输入窗口长度(sequence_length)",
+    "hidden_size": "隐藏层维度(hidden_size)",
+    "num_layers": "LSTM层数(num_layers)",
+    "dropout": "丢弃率(dropout)",
+    "epochs": "训练轮数(epochs)",
+    "batch_size": "批大小(batch_size)",
+    "learning_rate": "学习率(learning_rate)",
+    "train_ratio": "训练集比例(train_ratio)",
+    "device": "计算设备(device)",
+}
 
 
 class TimeSeriesDataset(Dataset):
@@ -210,27 +233,79 @@ def _render_image(
     train_losses: list[float],
     validation_losses: list[float],
 ) -> bytes:
-    figure = Figure(figsize=(14, 8), constrained_layout=True)
+    chinese_font = get_chinese_font()
+    figure = Figure(figsize=(14, 8), constrained_layout=True, facecolor="#f4f6f8")
     loss_axis, forecast_axis = figure.subplots(2, 1)
+    figure.suptitle(
+        "LSTM 时间序列预测结果",
+        fontproperties=chinese_font,
+        fontsize=18,
+        fontweight="bold",
+    )
 
     epochs = np.arange(1, len(train_losses) + 1)
-    loss_axis.plot(epochs, train_losses, label="Train loss")
-    loss_axis.plot(epochs, validation_losses, label="Validation loss")
-    loss_axis.set(title="Training history", xlabel="Epoch", ylabel="MSE loss")
-    loss_axis.grid(alpha=0.3)
-    loss_axis.legend()
-
-    forecast_axis.plot(observed_time, observed, label="Observed", alpha=0.8)
-    forecast_axis.plot(future_time, expected, label="Expected future", linestyle="--")
-    forecast_axis.plot(future_time, forecast, label="Forecast", linewidth=2)
-    forecast_axis.axvline(observed_time[-1], color="gray", linestyle=":")
-    forecast_axis.set(
-        title="LSTM direct multi-step forecast",
-        xlabel="Time",
-        ylabel="Value",
+    loss_axis.plot(
+        epochs,
+        train_losses,
+        label="训练损失",
+        color="#2563eb",
+        linewidth=2,
+        marker="o",
+        markersize=4,
     )
-    forecast_axis.grid(alpha=0.3)
-    forecast_axis.legend()
+    loss_axis.plot(
+        epochs,
+        validation_losses,
+        label="验证损失",
+        color="#f97316",
+        linewidth=2,
+        marker="o",
+        markersize=4,
+    )
+    loss_axis.set_title("训练损失变化", fontproperties=chinese_font, fontsize=13)
+    loss_axis.set_xlabel("训练轮次", fontproperties=chinese_font)
+    loss_axis.set_ylabel("均方误差损失", fontproperties=chinese_font)
+    loss_axis.grid(alpha=0.2, linestyle="--")
+    loss_axis.legend(prop=chinese_font, frameon=False)
+
+    forecast_axis.plot(
+        observed_time,
+        observed,
+        label="历史观测值",
+        color="#475569",
+        alpha=0.8,
+    )
+    forecast_axis.plot(
+        future_time,
+        expected,
+        label="未来真实值",
+        color="#16a34a",
+        linestyle="--",
+        linewidth=2,
+    )
+    forecast_axis.plot(
+        future_time,
+        forecast,
+        label="模型预测值",
+        color="#dc2626",
+        linewidth=2.2,
+    )
+    forecast_axis.axvline(
+        observed_time[-1],
+        color="#64748b",
+        linestyle=":",
+        label="预测起点",
+    )
+    forecast_axis.set_title("多步预测结果", fontproperties=chinese_font, fontsize=13)
+    forecast_axis.set_xlabel("时间", fontproperties=chinese_font)
+    forecast_axis.set_ylabel("数值", fontproperties=chinese_font)
+    forecast_axis.grid(alpha=0.2, linestyle="--")
+    forecast_axis.legend(prop=chinese_font, frameon=False, ncol=2)
+
+    for axis in (loss_axis, forecast_axis):
+        axis.set_facecolor("white")
+        axis.spines["top"].set_visible(False)
+        axis.spines["right"].set_visible(False)
 
     output = io.BytesIO()
     figure.savefig(output, format="png", dpi=150)
@@ -246,17 +321,17 @@ def _build_csv(
 ) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(("step", "time", "series", "value"))
+    writer.writerow(("步骤(step)", "时间(time)", "序列(series)", "数值(value)"))
     for step, (time_value, value) in enumerate(
         zip(observed_time, observed, strict=True)
     ):
-        writer.writerow((step, float(time_value), "observed", float(value)))
+        writer.writerow((step, float(time_value), "观测值(observed)", float(value)))
     offset = len(observed)
     for step, (time_value, predicted, actual) in enumerate(
         zip(future_time, forecast, expected, strict=True), start=offset
     ):
-        writer.writerow((step, float(time_value), "forecast", float(predicted)))
-        writer.writerow((step, float(time_value), "expected", float(actual)))
+        writer.writerow((step, float(time_value), "预测值(forecast)", float(predicted)))
+        writer.writerow((step, float(time_value), "真实值(expected)", float(actual)))
     return output.getvalue().encode("utf-8-sig")
 
 
@@ -276,36 +351,42 @@ def _build_excel(
     series_sheet = workbook.active
     if series_sheet is None:
         series_sheet = workbook.create_sheet()
-    series_sheet.title = "series"
-    series_sheet.append(("step", "time", "series", "value"))
+    series_sheet.title = "数据序列(series)"
+    series_sheet.append(("步骤(step)", "时间(time)", "序列(series)", "数值(value)"))
     for step, (time_value, value) in enumerate(
         zip(observed_time, observed, strict=True)
     ):
-        series_sheet.append((step, float(time_value), "observed", float(value)))
+        series_sheet.append((step, float(time_value), "观测值(observed)", float(value)))
     offset = len(observed)
     for step, (time_value, predicted, actual) in enumerate(
         zip(future_time, forecast, expected, strict=True), start=offset
     ):
-        series_sheet.append((step, float(time_value), "forecast", float(predicted)))
-        series_sheet.append((step, float(time_value), "expected", float(actual)))
+        series_sheet.append(
+            (step, float(time_value), "预测值(forecast)", float(predicted))
+        )
+        series_sheet.append(
+            (step, float(time_value), "真实值(expected)", float(actual))
+        )
 
-    loss_sheet = workbook.create_sheet("losses")
-    loss_sheet.append(("epoch", "train_loss", "validation_loss"))
+    loss_sheet = workbook.create_sheet("损失(losses)")
+    loss_sheet.append(
+        ("轮次(epoch)", "训练损失(train_loss)", "验证损失(validation_loss)")
+    )
     for epoch, (train_loss, validation_loss) in enumerate(
         zip(train_losses, validation_losses, strict=True), start=1
     ):
         loss_sheet.append((epoch, train_loss, validation_loss))
 
-    params_sheet = workbook.create_sheet("parameters")
-    params_sheet.append(("group", "name", "value"))
+    params_sheet = workbook.create_sheet("参数(parameters)")
+    params_sheet.append(("分组(group)", "参数名(name)", "参数值(value)"))
     request_data = {
-        "dataset": dataset_params,
-        "model": model_params,
-        "training": training_params,
+        "数据集(dataset)": dataset_params,
+        "模型(model)": model_params,
+        "训练(training)": training_params,
     }
     for group, values in request_data.items():
         for name, value in values.items():
-            params_sheet.append((group, name, value))
+            params_sheet.append((group, _LSTM_PARAMETER_LABELS.get(name, name), value))
 
     output = io.BytesIO()
     workbook.save(output)

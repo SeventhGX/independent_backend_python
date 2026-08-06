@@ -14,7 +14,7 @@ from starlette.responses import Response
 from app.api.ai.v1 import router as ai_router
 from app.api.ai.v2 import router as ai_router_v2
 from app.api.article.v1 import router as article_router
-from app.api.demo.lstm import demo_router
+from app.api.demo.api import router as demo_router
 from app.api.docs.api import router as docs_router
 from app.api.knowledge.v1 import router as knowledge_router
 from app.api.recipient.v1 import router as recipient_router

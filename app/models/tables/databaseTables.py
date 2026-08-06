@@ -182,3 +182,19 @@ class LstmResult(SQLModel, table=True):
     forecast_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
     expected_data: list[float] = Field(sa_column=Column(JSONB, nullable=False))
     create_time: datetime = Field(default_factory=datetime.now)
+
+
+class IsolationForestResult(SQLModel, table=True):
+    """Isolation Forest demo 的参数、指标与检测数据。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    dataset_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    model_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    metrics: dict = Field(sa_column=Column(JSONB, nullable=False))
+    x_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    y_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    actual_labels: list[int] = Field(sa_column=Column(JSONB, nullable=False))
+    predicted_labels: list[int] = Field(sa_column=Column(JSONB, nullable=False))
+    anomaly_scores: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    create_time: datetime = Field(default_factory=datetime.now)

@@ -15,6 +15,11 @@ async def get_demo_list(current_user: UserDep):
                 "name": "lstm",
                 "desc": "LSTM 时间序列预测",
                 "type": "time-series",
+            },
+            {
+                "name": "isolation-forest",
+                "desc": "Isolation Forest 异常检测",
+                "type": "anomaly-detection",
             }
         ],
     }
