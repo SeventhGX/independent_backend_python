@@ -20,6 +20,11 @@ async def get_demo_list(current_user: UserDep):
                 "name": "isolation-forest",
                 "desc": "Isolation Forest 异常检测",
                 "type": "anomaly-detection",
-            }
+            },
+            {
+                "name": "kmeans",
+                "desc": "K-Means 聚类与肘部法则",
+                "type": "clustering",
+            },
         ],
     }

@@ -198,3 +198,25 @@ class IsolationForestResult(SQLModel, table=True):
     predicted_labels: list[int] = Field(sa_column=Column(JSONB, nullable=False))
     anomaly_scores: list[float] = Field(sa_column=Column(JSONB, nullable=False))
     create_time: datetime = Field(default_factory=datetime.now)
+
+
+class KMeansResult(SQLModel, table=True):
+    """K-Means demo 的参数、指标、聚类数据与肘部法则曲线。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    dataset_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    model_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    evaluation_params: dict = Field(sa_column=Column(JSONB, nullable=False))
+    metrics: dict = Field(sa_column=Column(JSONB, nullable=False))
+    x_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    y_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    true_labels: list[int] = Field(sa_column=Column(JSONB, nullable=False))
+    cluster_labels: list[int] = Field(sa_column=Column(JSONB, nullable=False))
+    center_distances: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    center_x_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    center_y_values: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    elbow_k_values: list[int] = Field(sa_column=Column(JSONB, nullable=False))
+    elbow_inertias: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    elbow_silhouettes: list[float] = Field(sa_column=Column(JSONB, nullable=False))
+    create_time: datetime = Field(default_factory=datetime.now)
