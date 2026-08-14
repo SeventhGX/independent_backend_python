@@ -220,3 +220,19 @@ class KMeansResult(SQLModel, table=True):
     elbow_inertias: list[float] = Field(sa_column=Column(JSONB, nullable=False))
     elbow_silhouettes: list[float] = Field(sa_column=Column(JSONB, nullable=False))
     create_time: datetime = Field(default_factory=datetime.now)
+
+
+class AStarResult(SQLModel, table=True):
+    """A* demo 的原始图、探索过程与最短路径结果。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    graph: dict = Field(sa_column=Column(JSONB, nullable=False))
+    start_id: str
+    goal_id: str
+    start_to_goal_distance: float
+    path: list[str] = Field(sa_column=Column(JSONB, nullable=False))
+    path_edge_ids: list[str] = Field(sa_column=Column(JSONB, nullable=False))
+    steps: list[dict] = Field(sa_column=Column(JSONB, nullable=False))
+    metrics: dict = Field(sa_column=Column(JSONB, nullable=False))
+    create_time: datetime = Field(default_factory=datetime.now)

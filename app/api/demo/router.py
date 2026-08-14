@@ -26,5 +26,10 @@ async def get_demo_list(current_user: UserDep):
                 "desc": "K-Means 聚类与肘部法则",
                 "type": "clustering",
             },
+            {
+                "name": "astar",
+                "desc": "A* 图网络路线搜索",
+                "type": "pathfinding",
+            },
         ],
     }
