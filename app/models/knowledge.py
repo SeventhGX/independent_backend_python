@@ -3,7 +3,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class KnowledgeTagResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class KnowledgeTagsResponse(BaseModel):
+    file_id: uuid.UUID
+    tags: list[KnowledgeTagResponse]
 
 
 class KnowledgeResponse(BaseModel):
@@ -13,6 +23,36 @@ class KnowledgeResponse(BaseModel):
     file_type: str | None
     is_embedded: bool
     create_time: datetime | None
+    tags: list[KnowledgeTagResponse] = Field(default_factory=list)
+
+
+class SetKnowledgeTagsRequest(BaseModel):
+    file_id: uuid.UUID
+    tag_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
+    new_tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("new_tags")
+    @classmethod
+    def normalize_new_tags(cls, tags: list[str]) -> list[str]:
+        normalized_tags = []
+        seen_names = set()
+        for tag in tags:
+            name = tag.strip()
+            if not name:
+                raise ValueError("标签名称不能为空")
+            if len(name) > 50:
+                raise ValueError("标签名称不能超过 50 个字符")
+            normalized_name = name.casefold()
+            if normalized_name not in seen_names:
+                seen_names.add(normalized_name)
+                normalized_tags.append(name)
+        return normalized_tags
+
+
+class AutoTagKnowledgeRequest(BaseModel):
+    file_id: uuid.UUID
+    max_tags: int = Field(default=5, ge=1, le=10)
+    allow_new_tags: bool = True
 
 
 class DeleteKnowledgeFilesRequest(BaseModel):

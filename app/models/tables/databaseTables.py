@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, LargeBinary
+from sqlalchemy import Column, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -123,6 +123,31 @@ class Knowledge(SQLModel, table=True):
     file_id: uuid.UUID
     is_embedded: bool = False
     create_time: datetime | None = Field(default_factory=datetime.now)
+
+
+class KnowledgeTag(SQLModel, table=True):
+    """
+    用户级知识库标签
+    """
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "normalized_name", name="uq_knowledge_tag_user_name"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    name: str = Field(max_length=50)
+    normalized_name: str = Field(max_length=50)
+    create_time: datetime = Field(default_factory=datetime.now)
+
+
+class KnowledgeTagLink(SQLModel, table=True):
+    """
+    知识文件与标签的多对多关联
+    """
+
+    knowledge_id: uuid.UUID = Field(primary_key=True)
+    tag_id: uuid.UUID = Field(primary_key=True)
 
 
 class Chunks(SQLModel, table=True):

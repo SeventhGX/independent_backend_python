@@ -1,8 +1,15 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 
-from app.models.knowledge import DeleteKnowledgeFilesRequest, RagChatRequest, RagRetrieveRequest
+from app.models.knowledge import (
+    AutoTagKnowledgeRequest,
+    DeleteKnowledgeFilesRequest,
+    RagChatRequest,
+    RagRetrieveRequest,
+    SetKnowledgeTagsRequest,
+)
 from app.services import knowledgeServ
 from app.utils.auth import get_current_active_user
 
@@ -10,8 +17,12 @@ router = APIRouter(prefix="/knowledge/v1")
 
 
 @router.post("/upload_file")
-async def upload_file(file: list[UploadFile] = File(...), current_user=Depends(get_current_active_user)):
-    uploaded_files = await knowledgeServ.upload_files(file, current_user.id)
+async def upload_file(
+    file: Annotated[list[UploadFile], File()],
+    tag_names: Annotated[list[str] | None, Form()] = None,
+    current_user=Depends(get_current_active_user),
+):
+    uploaded_files = await knowledgeServ.upload_files(file, current_user.id, tag_names)
     return {
         "message": "success",
         "code": 200,
@@ -26,6 +37,42 @@ async def get_all_knowledge(current_user=Depends(get_current_active_user)):
         "message": "success",
         "code": 200,
         "data": knowledge_list,
+    }
+
+
+@router.get("/tags")
+async def get_all_tags(current_user=Depends(get_current_active_user)):
+    tags = await knowledgeServ.get_all_tags(current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": tags,
+    }
+
+
+@router.post("/set_tags")
+async def set_file_tags(
+    request: SetKnowledgeTagsRequest,
+    current_user=Depends(get_current_active_user),
+):
+    tags = knowledgeServ.set_file_tags(request, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": tags,
+    }
+
+
+@router.post("/auto_tag")
+async def auto_tag_file(
+    request: AutoTagKnowledgeRequest,
+    current_user=Depends(get_current_active_user),
+):
+    tags = await knowledgeServ.auto_tag_file(request, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": tags,
     }
 
 
