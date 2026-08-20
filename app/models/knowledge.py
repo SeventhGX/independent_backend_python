@@ -5,6 +5,8 @@ from typing import Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+PUBLIC_KNOWLEDGE_SOURCE_PREFIX = "knowledge-public://"
+
 
 class KnowledgeTagResponse(BaseModel):
     id: uuid.UUID
@@ -23,7 +25,18 @@ class KnowledgeResponse(BaseModel):
     file_type: str | None
     is_embedded: bool
     create_time: datetime | None
+    source: str
+    is_public: bool = False
     tags: list[KnowledgeTagResponse] = Field(default_factory=list)
+
+
+class KnowledgeFileIdsRequest(BaseModel):
+    file_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class KnowledgeVisibilityResponse(BaseModel):
+    file_ids: list[uuid.UUID]
+    count: int
 
 
 class SetKnowledgeTagsRequest(BaseModel):

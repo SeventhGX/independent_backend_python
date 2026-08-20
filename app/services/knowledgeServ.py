@@ -8,11 +8,13 @@ from fastapi import HTTPException, UploadFile
 from openai import AsyncOpenAI
 
 from app.models.knowledge import (
+    PUBLIC_KNOWLEDGE_SOURCE_PREFIX,
     AutoTagKnowledgeRequest,
     DeleteKnowledgeFilesResponse,
     KnowledgeResponse,
     KnowledgeTagResponse,
     KnowledgeTagsResponse,
+    KnowledgeVisibilityResponse,
     RagChatRequest,
     RagChatResponse,
     RagChunkResponse,
@@ -23,7 +25,12 @@ from app.models.knowledge import (
 from app.models.tables.databaseTables import Chunks, File, Knowledge, KnowledgeTag
 from app.repositories import fileRepo, knowledgeRepo
 from app.utils.config import settings
-from app.utils.embedding import chunk_markdown, extract_markdown, qwen_embedding_text, qwen_embedding_texts
+from app.utils.embedding import (
+    chunk_markdown,
+    extract_markdown,
+    qwen_embedding_text,
+    qwen_embedding_texts,
+)
 
 KNOWLEDGE_FILE_TYPE_PREFIX = "knowledge"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -64,6 +71,7 @@ def _validate_upload_tag_names(tag_names: list[str]) -> list[str]:
 async def upload_files(
     files: list[UploadFile],
     user_id: uuid.UUID,
+    user_name: str,
     tag_names: list[str] | None = None,
 ):
     tag_names = _validate_upload_tag_names(tag_names or [])
@@ -91,14 +99,30 @@ async def upload_files(
                 else None,
                 is_embedded=saved_knowledge.is_embedded,
                 create_time=saved_knowledge.create_time,
+                source=user_name,
                 tags=[_tag_response(tag) for tag in tags or []],
             )
         )
     return uploaded_files
 
 
+def _get_source_user_id(knowledge: Knowledge, file: File) -> uuid.UUID:
+    source_url = file.source_url or ""
+    if source_url.startswith(PUBLIC_KNOWLEDGE_SOURCE_PREFIX):
+        try:
+            return uuid.UUID(source_url.removeprefix(PUBLIC_KNOWLEDGE_SOURCE_PREFIX))
+        except ValueError:
+            pass
+    return knowledge.user_id
+
+
 async def get_all_knowledge(user_id: uuid.UUID):
     knowledge_files = knowledgeRepo.select_knowledge_by_user_id(user_id)
+    source_user_ids = [
+        _get_source_user_id(knowledge, file) for knowledge, file in knowledge_files
+    ]
+    user_name_map = knowledgeRepo.select_user_names_by_ids(source_user_ids)
+    admin_user_id = knowledgeRepo.select_default_admin_user_id()
     tag_map = knowledgeRepo.select_tags_by_knowledge_ids(
         [knowledge.id for knowledge, _ in knowledge_files]
     )
@@ -112,6 +136,15 @@ async def get_all_knowledge(user_id: uuid.UUID):
             else None,
             is_embedded=knowledge.is_embedded,
             create_time=knowledge.create_time,
+            source=user_name_map.get(
+                _get_source_user_id(knowledge, file),
+                "未知用户",
+            ),
+            is_public=(
+                admin_user_id is not None
+                and knowledge.user_id == admin_user_id
+                and knowledge.is_embedded
+            ),
             tags=[_tag_response(tag) for tag in tag_map.get(knowledge.id, [])],
         )
         for knowledge, file in knowledge_files
@@ -240,6 +273,35 @@ async def delete_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
     return DeleteKnowledgeFilesResponse(
         deleted_file_ids=deleted_file_ids,
         deleted_count=len(deleted_file_ids),
+    )
+
+
+def _change_file_visibility(operation, file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    try:
+        moved_file_ids = list(operation(file_ids, user_id))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return KnowledgeVisibilityResponse(
+        file_ids=moved_file_ids,
+        count=len(moved_file_ids),
+    )
+
+
+def publish_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    return _change_file_visibility(
+        knowledgeRepo.publish_knowledge_files,
+        file_ids,
+        user_id,
+    )
+
+
+def unpublish_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    return _change_file_visibility(
+        knowledgeRepo.unpublish_knowledge_files,
+        file_ids,
+        user_id,
     )
 
 

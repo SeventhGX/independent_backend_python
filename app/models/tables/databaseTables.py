@@ -6,6 +6,8 @@ from sqlalchemy import Column, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
+DEFAULT_ADMIN_USER_CODE = "00000000"
+
 
 class Article(SQLModel, table=True):
     """

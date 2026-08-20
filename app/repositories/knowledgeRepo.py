@@ -2,17 +2,29 @@ import unicodedata
 import uuid
 from typing import Any, cast
 
-from sqlalchemy import delete
+from sqlalchemy import and_, delete, or_
 from sqlmodel import Session, col, select
 
+from app.models.knowledge import PUBLIC_KNOWLEDGE_SOURCE_PREFIX
 from app.models.tables.databaseTables import (
+    DEFAULT_ADMIN_USER_CODE,
     Chunks,
     File,
     Knowledge,
     KnowledgeTag,
     KnowledgeTagLink,
+    Sys_User,
 )
 from app.utils.database import engine
+
+
+def _default_admin_id_subquery():
+    return (
+        select(Sys_User.id)
+        .where(Sys_User.user_code == DEFAULT_ADMIN_USER_CODE)
+        .limit(1)
+        .scalar_subquery()
+    )
 
 
 def insert_knowledge_file(file: File, knowledge: Knowledge):
@@ -30,13 +42,41 @@ def insert_knowledge_file(file: File, knowledge: Knowledge):
 
 def select_knowledge_by_user_id(user_id: uuid.UUID):
     with Session(engine) as session:
+        admin_user_id = _default_admin_id_subquery()
         statement = (
             select(Knowledge, File)
             .join(File, col(Knowledge.file_id) == File.id)
-            .where(Knowledge.user_id == user_id)
+            .where(
+                or_(
+                    col(Knowledge.user_id) == user_id,
+                    and_(
+                        col(Knowledge.user_id) == admin_user_id,
+                        col(Knowledge.is_embedded).is_(True),
+                    ),
+                )
+            )
             .order_by(col(Knowledge.create_time).desc())
         )
         return session.exec(statement).all()
+
+
+def select_user_names_by_ids(user_ids: list[uuid.UUID]):
+    unique_user_ids = list(dict.fromkeys(user_ids))
+    if not unique_user_ids:
+        return {}
+
+    with Session(engine) as session:
+        statement = select(Sys_User.id, Sys_User.user_name).where(
+            col(Sys_User.id).in_(unique_user_ids)
+        )
+        return dict(session.exec(statement).all())
+
+
+def select_default_admin_user_id():
+    with Session(engine) as session:
+        return session.exec(
+            select(Sys_User.id).where(Sys_User.user_code == DEFAULT_ADMIN_USER_CODE)
+        ).first()
 
 
 def select_knowledge_file(file_id: uuid.UUID, user_id: uuid.UUID):
@@ -168,11 +208,20 @@ def search_similar_chunks(
     top_k: int = 5,
 ):
     with Session(engine) as session:
+        admin_user_id = _default_admin_id_subquery()
         distance = cast(Any, Chunks.embedding).cosine_distance(query_embedding).label("distance")
         statement = (
             select(Chunks, distance)
             .join(Knowledge, col(Chunks.file_id) == col(Knowledge.file_id))
-            .where(Knowledge.user_id == user_id)
+            .where(
+                or_(
+                    col(Knowledge.user_id) == user_id,
+                    and_(
+                        col(Knowledge.user_id) == admin_user_id,
+                        col(Knowledge.is_embedded).is_(True),
+                    ),
+                )
+            )
             .where(col(Chunks.embedding).is_not(None))
             .order_by(distance)
             .limit(top_k)
@@ -180,6 +229,70 @@ def search_similar_chunks(
         if file_ids:
             statement = statement.where(col(Chunks.file_id).in_(file_ids))
         return session.exec(statement).all()
+
+
+def publish_knowledge_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    unique_file_ids = list(dict.fromkeys(file_ids))
+    if not unique_file_ids:
+        return []
+
+    with Session(engine) as session:
+        admin_user_id = session.exec(
+            select(Sys_User.id).where(Sys_User.user_code == DEFAULT_ADMIN_USER_CODE)
+        ).first()
+        if admin_user_id is None:
+            raise RuntimeError("系统管理员账号不存在")
+
+        rows = session.exec(
+            select(Knowledge, File)
+            .join(File, col(Knowledge.file_id) == File.id)
+            .where(Knowledge.user_id == user_id)
+            .where(col(Knowledge.file_id).in_(unique_file_ids))
+        ).all()
+        if len(rows) != len(unique_file_ids):
+            raise ValueError("包含不存在或不属于当前用户的知识文件")
+        if any(not knowledge.is_embedded for knowledge, _ in rows):
+            raise ValueError("只能公开已完成编码的知识文件")
+
+        for knowledge, file in rows:
+            knowledge.user_id = admin_user_id
+            file.source_url = f"{PUBLIC_KNOWLEDGE_SOURCE_PREFIX}{user_id}"
+            session.add(knowledge)
+            session.add(file)
+        session.commit()
+        return unique_file_ids
+
+
+def unpublish_knowledge_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    unique_file_ids = list(dict.fromkeys(file_ids))
+    if not unique_file_ids:
+        return []
+
+    with Session(engine) as session:
+        admin_user_id = session.exec(
+            select(Sys_User.id).where(Sys_User.user_code == DEFAULT_ADMIN_USER_CODE)
+        ).first()
+        if admin_user_id is None:
+            raise RuntimeError("系统管理员账号不存在")
+
+        source_marker = f"{PUBLIC_KNOWLEDGE_SOURCE_PREFIX}{user_id}"
+        rows = session.exec(
+            select(Knowledge, File)
+            .join(File, col(Knowledge.file_id) == File.id)
+            .where(Knowledge.user_id == admin_user_id)
+            .where(File.source_url == source_marker)
+            .where(col(Knowledge.file_id).in_(unique_file_ids))
+        ).all()
+        if len(rows) != len(unique_file_ids):
+            raise ValueError("包含非当前用户公开的知识文件")
+
+        for knowledge, file in rows:
+            knowledge.user_id = user_id
+            file.source_url = None
+            session.add(knowledge)
+            session.add(file)
+        session.commit()
+        return unique_file_ids
 
 
 def delete_knowledge_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from app.models.knowledge import (
     AutoTagKnowledgeRequest,
     DeleteKnowledgeFilesRequest,
+    KnowledgeFileIdsRequest,
     RagChatRequest,
     RagRetrieveRequest,
     SetKnowledgeTagsRequest,
@@ -22,7 +23,12 @@ async def upload_file(
     tag_names: Annotated[list[str] | None, Form()] = None,
     current_user=Depends(get_current_active_user),
 ):
-    uploaded_files = await knowledgeServ.upload_files(file, current_user.id, tag_names)
+    uploaded_files = await knowledgeServ.upload_files(
+        file,
+        current_user.id,
+        current_user.user_name,
+        tag_names,
+    )
     return {
         "message": "success",
         "code": 200,
@@ -83,6 +89,32 @@ async def delete_files(request: DeleteKnowledgeFilesRequest, current_user=Depend
         "message": "success",
         "code": 200,
         "data": deleted_files,
+    }
+
+
+@router.post("/publish_files")
+async def publish_files(
+    request: KnowledgeFileIdsRequest,
+    current_user=Depends(get_current_active_user),
+):
+    published_files = knowledgeServ.publish_files(request.file_ids, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": published_files,
+    }
+
+
+@router.post("/unpublish_files")
+async def unpublish_files(
+    request: KnowledgeFileIdsRequest,
+    current_user=Depends(get_current_active_user),
+):
+    unpublished_files = knowledgeServ.unpublish_files(request.file_ids, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": unpublished_files,
     }
 
 

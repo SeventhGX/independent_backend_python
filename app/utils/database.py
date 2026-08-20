@@ -1,9 +1,9 @@
+from pwdlib import PasswordHash
+from sqlmodel import Session, SQLModel, create_engine, select
+
+from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Sys_User
 from app.utils.config import settings
 from app.utils.log import logger
-from sqlmodel import SQLModel, create_engine, select, Session
-from app.models.tables.databaseTables import *
-
-from pwdlib import PasswordHash
 
 # ---------------------------------------------------------------------------
 # 数据库连接
@@ -24,14 +24,17 @@ def init_db():
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         admin_user = session.exec(
-            select(Sys_User).where(Sys_User.user_name == "admin", Sys_User.user_code == "00000000")
+            select(Sys_User).where(
+                Sys_User.user_name == "admin",
+                Sys_User.user_code == DEFAULT_ADMIN_USER_CODE,
+            )
         ).first()
         if not admin_user:
             logger.info("初始化数据库...")
             logger.info("创建默认管理员账号...")
             password_hash = PasswordHash.recommended().hash("admin123")
             admin_user = Sys_User(
-                user_code="00000000",
+                user_code=DEFAULT_ADMIN_USER_CODE,
                 user_name="admin",
                 password=password_hash,
             )
