@@ -52,6 +52,13 @@ def select_databases_by_names(database_names: list[str]):
         ).all()
 
 
+def select_all_databases():
+    with Session(engine) as session:
+        return session.exec(
+            select(Database).order_by(col(Database.database_name))
+        ).all()
+
+
 def select_metadata_options(field_names: list[str]):
     if not field_names:
         return []

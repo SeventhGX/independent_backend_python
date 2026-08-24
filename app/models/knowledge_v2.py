@@ -43,6 +43,13 @@ class KnowledgeV2DatabaseResponse(BaseModel):
     name: str
 
 
+class KnowledgeV2DatabaseDetailResponse(BaseModel):
+    id: uuid.UUID
+    database_name: str
+    database_desc: str | None
+    meta_data_template: list[str]
+
+
 class KnowledgeV2FileResponse(BaseModel):
     id: uuid.UUID
     filename: str

@@ -86,6 +86,12 @@ async def get_all_tags():
 	return {"message": "success", "code": 200, "data": data}
 
 
+@router.get("/databases", summary="获取全部公开知识库")
+async def get_all_databases():
+	data = knowledgeV2Serv.get_all_databases()
+	return {"message": "success", "code": 200, "data": data}
+
+
 @router.post("/set_tags", summary="设置本人知识文件的公开标签")
 async def set_file_tags(request: SetKnowledgeV2TagsRequest, current_user: UserDep):
 	data = knowledgeV2Serv.set_file_tags(request, current_user.id)

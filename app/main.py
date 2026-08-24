@@ -18,6 +18,7 @@ from app.api.demo.api import router as demo_router
 from app.api.docs.api import router as docs_router
 from app.api.knowledge.v1 import router as knowledge_router
 from app.api.knowledge.v2 import router as knowledge_router_v2
+from app.api.metadata.v1 import router as metadata_router
 from app.api.recipient.v1 import router as recipient_router
 from app.api.system.systemApi import router as system_router
 from app.utils.log import logger
@@ -264,5 +265,6 @@ app.include_router(ai_router, tags=["ai"])
 app.include_router(ai_router_v2, tags=["ai_v2"])
 app.include_router(knowledge_router, tags=["knowledge"])
 app.include_router(knowledge_router_v2, tags=["knowledge_v2"])
+app.include_router(metadata_router, tags=["metadata"])
 app.include_router(docs_router, tags=["docs"])
 app.include_router(demo_router)

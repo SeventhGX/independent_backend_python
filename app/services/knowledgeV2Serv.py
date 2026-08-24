@@ -17,6 +17,7 @@ from app.models.knowledge_v2 import (
     KnowledgeV2ChatRequest,
     KnowledgeV2ChatResponse,
     KnowledgeV2ChunkResponse,
+    KnowledgeV2DatabaseDetailResponse,
     KnowledgeV2DatabaseResponse,
     KnowledgeV2FileResponse,
     KnowledgeV2PageResponse,
@@ -217,6 +218,18 @@ def get_all_tags():
     return [
         KnowledgeV2TagResponse(id=tag.id, name=tag.name)
         for tag in knowledgeV2Repo.select_all_tags()
+    ]
+
+
+def get_all_databases():
+    return [
+        KnowledgeV2DatabaseDetailResponse(
+            id=database.id,
+            database_name=database.database_name,
+            database_desc=database.database_desc,
+            meta_data_template=database.meta_data_template,
+        )
+        for database in knowledgeV2Repo.select_all_databases()
     ]
 
 
