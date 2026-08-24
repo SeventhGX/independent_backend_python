@@ -1,7 +1,7 @@
 from pwdlib import PasswordHash
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Sys_User
+from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Metadata, Sys_User
 from app.utils.config import settings
 from app.utils.log import logger
 
@@ -18,7 +18,7 @@ engine = create_engine(str(settings.DATABASE_URI))
 
 
 def init_db():
-    """创建数据库表结构，并在缺失时初始化默认管理员账号。"""
+    """创建数据库表结构，并在缺失时初始化默认管理员账号和元数据。"""
     logger.debug(settings.DATABASE_URI)
     logger.info("初始化数据库...")
     SQLModel.metadata.create_all(engine)
@@ -42,6 +42,20 @@ def init_db():
             session.commit()
             logger.info("默认管理员账号(00000000;admin;admin123)创建成功！")
             logger.info("数据库初始化完成！")
+
+        metadata = session.exec(select(Metadata).limit(1)).first()
+        if metadata is None:
+            logger.info("创建默认元数据...")
+            initial_metadata: list[Metadata] = [
+                Metadata(field_name="database", field_desc="知识库", value="sop", desc="岗位SOP"),
+                Metadata(field_name="database", field_desc="知识库", value="sys", desc="系统操作指南"),
+                Metadata(field_name="database", field_desc="知识库", value="repair", desc="维修手册"),
+                Metadata(field_name="position", field_desc="岗位", value="TL", desc="投料"),
+                Metadata(field_name="equipment", field_desc="设备", value="YL", desc="窑炉"),
+            ]
+            session.add_all(initial_metadata)
+            session.commit()
+            logger.info("默认元数据创建成功！")
     logger.info("数据库初始化完成！")
 
 

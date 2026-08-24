@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, LargeBinary, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -127,14 +127,30 @@ class Knowledge(SQLModel, table=True):
     create_time: datetime | None = Field(default_factory=datetime.now)
 
 
+class KnowledgeV2(SQLModel, table=True):
+    """
+    知识库 V2，记录用户上传的知识文件，支持元数据与md5校验
+    """
+
+    __table_args__ = (UniqueConstraint("md5", name="uq_knowledge_v2_md5"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID
+    filename: str
+    file_type: str
+    md5: str
+    meta_data: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    is_embedded: bool = False
+    create_time: datetime | None = Field(default_factory=datetime.now)
+
+
 class KnowledgeTag(SQLModel, table=True):
     """
     用户级知识库标签
     """
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "normalized_name", name="uq_knowledge_tag_user_name"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "normalized_name", name="uq_knowledge_tag_user_name"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID = Field(index=True)
@@ -152,6 +168,15 @@ class KnowledgeTagLink(SQLModel, table=True):
     tag_id: uuid.UUID = Field(primary_key=True)
 
 
+class KnowledgeTagLinkV2(SQLModel, table=True):
+    """
+    V2 知识文件与公开标签的多对多关联
+    """
+
+    knowledgev2_id: uuid.UUID = Field(primary_key=True)
+    tagv2_id: uuid.UUID = Field(primary_key=True)
+
+
 class Chunks(SQLModel, table=True):
     """
     知识文件切片
@@ -163,6 +188,71 @@ class Chunks(SQLModel, table=True):
     meta_data: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     content: str
     embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))
+
+
+class KnowledgeChunkV2(SQLModel, table=True):
+    """V2 知识文件切片，与 v1 的 Chunks 独立存储。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    knowledgev2_id: uuid.UUID = Field(index=True)
+    chunk_index: int
+    meta_data: dict | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    content: str
+    embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))
+
+
+class Metadata(SQLModel, table=True):
+    """
+    元数据
+    """
+
+    __table_args__ = (UniqueConstraint("field_name", "value", name="uq_metadata_field_value"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    field_name: str = Field(index=True)
+    field_desc: str | None = None
+    value: str
+    desc: str | None = None
+
+
+class Database(SQLModel, table=True):
+    """
+    知识库分库
+    """
+
+    __table_args__ = (UniqueConstraint("database_name", name="uq_database_name"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    database_name: str = Field(index=True)
+    database_desc: str | None = None
+    meta_data_template: list[str] = Field(sa_column=Column(JSONB, nullable=False))
+
+
+class KnowledgeDatabaseLink(SQLModel, table=True):
+    """
+    知识所属的分库关联表
+    """
+
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'review', 'draft')", name="ck_knowledge_database_status"),
+    )
+
+    knowledgev2_id: uuid.UUID = Field(primary_key=True)
+    database_id: uuid.UUID = Field(primary_key=True)
+    status: str = Field(default="active")  # active, review, draft
+
+
+class KnowledgeTagV2(SQLModel, table=True):
+    """
+    知识库分库标签，所有用户与分库共享的标签
+    """
+
+    __table_args__ = (UniqueConstraint("normalized_name", name="uq_knowledge_tag_v2_name"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=50)
+    normalized_name: str = Field(max_length=50)
+    create_time: datetime = Field(default_factory=datetime.now)
 
 
 class Docs(SQLModel, table=True):
