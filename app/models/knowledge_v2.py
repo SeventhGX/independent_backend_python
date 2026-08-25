@@ -77,6 +77,11 @@ class DeleteKnowledgeV2Response(BaseModel):
     deleted: bool
 
 
+class DeleteQuestionLogResponse(BaseModel):
+    id: uuid.UUID
+    deleted: bool
+
+
 class KnowledgeV2RetrieveRequest(BaseModel):
     query: str = Field(min_length=1)
     database_name: str = Field(min_length=1)
@@ -120,10 +125,10 @@ class KnowledgeV2ChunkResponse(BaseModel):
     chunk_index: int
     content: str
     meta_data: dict | None = None
-    score: float
-    semantic_score: float
+    score: float | None = None
+    semantic_score: float | None = None
     keyword_score: float | None = None
-    retrieval_method: RetrievalMethod
+    retrieval_method: RetrievalMethod | None = None
 
 
 class KnowledgeV2ChatRequest(KnowledgeV2RetrieveRequest):
@@ -151,6 +156,7 @@ class QuestionLogResponse(BaseModel):
     question: str
     answer: str | None
     related_chunkv2_ids: list[uuid.UUID]
+    chunks: list[KnowledgeV2ChunkResponse] = Field(default_factory=list)
     user_feedback: QuestionFeedback | None
     create_time: datetime
 

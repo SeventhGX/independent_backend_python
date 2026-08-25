@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from sqlalchemy import delete, distinct, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from app.models.tables.databaseTables import (
@@ -18,6 +19,12 @@ from app.models.tables.databaseTables import (
     Sys_User,
 )
 from app.utils.database import engine
+
+
+class RequirementAlreadyExistsError(Exception):
+    def __init__(self, requirement_id: uuid.UUID):
+        self.requirement_id = requirement_id
+        super().__init__("该问答已创建知识库缺口请求")
 
 
 def _get_or_create_tags(
@@ -547,6 +554,21 @@ def search_similar_chunks(
         return session.exec(statement.order_by(distance).limit(top_k)).all()
 
 
+def select_chunks_by_ids(chunk_ids: list[uuid.UUID]):
+    unique_ids = list(dict.fromkeys(chunk_ids))
+    if not unique_ids:
+        return []
+    with Session(engine) as session:
+        return session.exec(
+            select(KnowledgeChunkV2, KnowledgeV2.filename)
+            .join(
+                KnowledgeV2,
+                col(KnowledgeChunkV2.knowledgev2_id) == col(KnowledgeV2.id),
+            )
+            .where(col(KnowledgeChunkV2.id).in_(unique_ids))
+        ).all()
+
+
 def select_open_requirements(requirement_ids: list[uuid.UUID]):
     unique_ids = list(dict.fromkeys(requirement_ids))
     if not unique_ids:
@@ -658,6 +680,20 @@ def update_question_feedback(
         return question_log
 
 
+def delete_question_log(question_log_id: uuid.UUID, user_id: uuid.UUID):
+    with Session(engine) as session:
+        question_log = session.exec(
+            select(QuestionLog)
+            .where(col(QuestionLog.id) == question_log_id)
+            .where(col(QuestionLog.user_id) == user_id)
+        ).first()
+        if question_log is None:
+            return None
+        session.delete(question_log)
+        session.commit()
+        return question_log_id
+
+
 def create_requirement(
     user_id: uuid.UUID,
     related_log_id: uuid.UUID,
@@ -674,13 +710,34 @@ def create_requirement(
         if question_log.user_feedback != "not_helpful":
             raise ValueError("仅可为反馈为 not_helpful 的问答创建知识库缺口请求")
 
+        existing_requirement = session.exec(
+            select(KnowledgeV2Require).where(
+                col(KnowledgeV2Require.related_log_id) == related_log_id
+            )
+        ).first()
+        if existing_requirement is not None:
+            raise RequirementAlreadyExistsError(existing_requirement.id)
+
         knowledge_requirement = KnowledgeV2Require(
             user_id=user_id,
             requirement=requirement,
             related_log_id=related_log_id,
         )
         session.add(knowledge_requirement)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError as error:
+            session.rollback()
+            existing_requirement = session.exec(
+                select(KnowledgeV2Require).where(
+                    col(KnowledgeV2Require.related_log_id) == related_log_id
+                )
+            ).first()
+            if existing_requirement is not None:
+                raise RequirementAlreadyExistsError(
+                    existing_requirement.id
+                ) from error
+            raise
         session.refresh(knowledge_requirement)
         return knowledge_requirement, question_log.question
 

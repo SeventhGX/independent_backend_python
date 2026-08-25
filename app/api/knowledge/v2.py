@@ -3,6 +3,7 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.models.knowledge_v2 import (
 	AutoTagKnowledgeV2Request,
@@ -176,6 +177,18 @@ async def rag_chat(request: KnowledgeV2ChatRequest, current_user: UserDep):
 	return {"message": "success", "code": 200, "data": data}
 
 
+@router.post("/chat_stream", summary="流式生成知识问答")
+async def rag_chat_stream(request: KnowledgeV2ChatRequest, current_user: UserDep):
+	return StreamingResponse(
+		knowledgeV2Serv.rag_chat_stream(request, current_user.id),
+		media_type="text/event-stream",
+		headers={
+			"Cache-Control": "no-cache",
+			"X-Accel-Buffering": "no",
+		},
+	)
+
+
 @router.post("/questions/similar", summary="检索相似典型问答")
 async def search_similar_questions(request: SimilarQuestionRequest):
 	data = await knowledgeV2Serv.search_similar_questions(request)
@@ -193,6 +206,12 @@ async def update_question_feedback(
 		request.feedback,
 		current_user.id,
 	)
+	return {"message": "success", "code": 200, "data": data}
+
+
+@router.delete("/questions/{question_log_id}", summary="删除本人历史问答")
+async def delete_question_log(question_log_id: uuid.UUID, current_user: UserDep):
+	data = knowledgeV2Serv.delete_question_log(question_log_id, current_user.id)
 	return {"message": "success", "code": 200, "data": data}
 
 

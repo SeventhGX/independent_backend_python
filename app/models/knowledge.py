@@ -110,7 +110,7 @@ class RagChunkResponse(BaseModel):
 
 
 class RagChatRequest(RagRetrieveRequest):
-    # model: str = "deepseek-v4-pro"
+    # model: str = "deepseek-v4-flash"
     temperature: float = 0.2
 
 

@@ -4,6 +4,7 @@ import re
 import unicodedata
 import uuid
 from collections import Counter
+from collections.abc import Sequence
 from math import ceil
 
 from fastapi import HTTPException, UploadFile, status
@@ -15,6 +16,7 @@ from app.models.knowledge_v2 import (
     AutoTagKnowledgeV2Request,
     CreateKnowledgeV2RequirementRequest,
     DeleteKnowledgeV2Response,
+    DeleteQuestionLogResponse,
     KnowledgeV2ChatRequest,
     KnowledgeV2ChatResponse,
     KnowledgeV2ChunkResponse,
@@ -241,7 +243,10 @@ def _file_response(
     )
 
 
-def _question_log_response(question_log: QuestionLog) -> QuestionLogResponse:
+def _question_log_response(
+    question_log: QuestionLog,
+    chunks: list[KnowledgeV2ChunkResponse] | None = None,
+) -> QuestionLogResponse:
     return QuestionLogResponse(
         id=question_log.id,
         question=question_log.question,
@@ -249,6 +254,7 @@ def _question_log_response(question_log: QuestionLog) -> QuestionLogResponse:
         related_chunkv2_ids=[
             uuid.UUID(chunk_id) for chunk_id in question_log.related_chunkv2_ids or []
         ],
+        chunks=chunks or [],
         user_feedback=(
             QuestionFeedback(question_log.user_feedback)
             if question_log.user_feedback
@@ -256,6 +262,39 @@ def _question_log_response(question_log: QuestionLog) -> QuestionLogResponse:
         ),
         create_time=question_log.create_time,
     )
+
+
+def _question_log_responses(
+    question_logs: Sequence[QuestionLog],
+) -> list[QuestionLogResponse]:
+    chunk_ids = [
+        uuid.UUID(chunk_id)
+        for question_log in question_logs
+        for chunk_id in question_log.related_chunkv2_ids or []
+    ]
+    chunk_rows = knowledgeV2Repo.select_chunks_by_ids(chunk_ids) if chunk_ids else []
+    chunk_map = {
+        chunk.id: KnowledgeV2ChunkResponse(
+            chunk_id=chunk.id,
+            knowledge_id=chunk.knowledgev2_id,
+            filename=filename,
+            chunk_index=chunk.chunk_index,
+            content=chunk.content,
+            meta_data=chunk.meta_data,
+        )
+        for chunk, filename in chunk_rows
+    }
+    return [
+        _question_log_response(
+            question_log,
+            [
+                chunk_map[uuid.UUID(chunk_id)]
+                for chunk_id in question_log.related_chunkv2_ids or []
+                if uuid.UUID(chunk_id) in chunk_map
+            ],
+        )
+        for question_log in question_logs
+    ]
 
 
 def _requirement_response(
@@ -629,13 +668,15 @@ async def retrieve_chunks(request: KnowledgeV2RetrieveRequest):
     ]
 
 
-async def rag_chat(request: KnowledgeV2ChatRequest, user_id: uuid.UUID):
-    chunks = await retrieve_chunks(request)
+def _chat_messages(
+    request: KnowledgeV2ChatRequest,
+    chunks: list[KnowledgeV2ChunkResponse],
+):
     context = "\n\n".join(
         f"[片段 {index}]\n文件: {chunk.filename}\n内容:\n{chunk.content}"
         for index, chunk in enumerate(chunks, start=1)
     )
-    messages = [
+    return [
         {
             "role": "system",
             "content": "你是一个严谨的公开知识库问答助手。只依据给定片段回答；片段不足时请明确说明无法从知识库中确定。",
@@ -645,16 +686,14 @@ async def rag_chat(request: KnowledgeV2ChatRequest, user_id: uuid.UUID):
             "content": f"知识库片段：\n{context or '无匹配片段'}\n\n用户问题：\n{request.query}",
         },
     ]
-    async with AsyncOpenAI(
-        api_key=settings.DEEPSEEK_API_KEY,
-        base_url=DEEPSEEK_BASE_URL,
-    ) as client:
-        completion = await client.chat.completions.create(
-            model="deepseek-v4-pro",
-            messages=messages,  # type: ignore
-            temperature=request.temperature,
-        )
-    answer = completion.choices[0].message.content or ""
+
+
+async def _save_question_log(
+    request: KnowledgeV2ChatRequest,
+    user_id: uuid.UUID,
+    answer: str,
+    chunks: list[KnowledgeV2ChunkResponse],
+):
     question_log = QuestionLog(
         user_id=user_id,
         question=request.query,
@@ -664,12 +703,68 @@ async def rag_chat(request: KnowledgeV2ChatRequest, user_id: uuid.UUID):
             f"问题：{request.query}\n回答：{answer}"
         ),
     )
-    saved_log = knowledgeV2Repo.create_question_log(question_log)
+    return knowledgeV2Repo.create_question_log(question_log)
+
+
+def _sse_event(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def rag_chat(request: KnowledgeV2ChatRequest, user_id: uuid.UUID):
+    chunks = await retrieve_chunks(request)
+    async with AsyncOpenAI(
+        api_key=settings.DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
+    ) as client:
+        completion = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=_chat_messages(request, chunks),  # type: ignore
+            temperature=request.temperature,
+        )
+    answer = completion.choices[0].message.content or ""
+    saved_log = await _save_question_log(request, user_id, answer, chunks)
     return KnowledgeV2ChatResponse(
         question_log_id=saved_log.id,
         answer=answer,
         chunks=chunks,
     )
+
+
+async def rag_chat_stream(
+    request: KnowledgeV2ChatRequest,
+    user_id: uuid.UUID,
+):
+    chunks = await retrieve_chunks(request)
+    yield _sse_event(
+        "chunks",
+        {"chunks": [chunk.model_dump(mode="json") for chunk in chunks]},
+    )
+
+    answer_parts = []
+    async with AsyncOpenAI(
+        api_key=settings.DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
+    ) as client:
+        completion = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=_chat_messages(request, chunks),  # type: ignore
+            temperature=request.temperature,
+            stream=True,
+        )
+        async for completion_chunk in completion:
+            content = completion_chunk.choices[0].delta.content or ""
+            if content:
+                answer_parts.append(content)
+                yield _sse_event("answer", {"answer": content})
+
+    saved_log = await _save_question_log(
+        request,
+        user_id,
+        "".join(answer_parts),
+        chunks,
+    )
+    yield _sse_event("done", {"question_log_id": str(saved_log.id)})
 
 
 def update_question_feedback(
@@ -684,7 +779,14 @@ def update_question_feedback(
     )
     if question_log is None:
         raise HTTPException(status_code=404, detail="问答记录不存在或不属于当前用户")
-    return _question_log_response(question_log)
+    return _question_log_responses([question_log])[0]
+
+
+def delete_question_log(question_log_id: uuid.UUID, user_id: uuid.UUID):
+    deleted_id = knowledgeV2Repo.delete_question_log(question_log_id, user_id)
+    if deleted_id is None:
+        raise HTTPException(status_code=404, detail="问答记录不存在或不属于当前用户")
+    return DeleteQuestionLogResponse(id=deleted_id, deleted=True)
 
 
 def create_knowledge_requirement(
@@ -698,6 +800,14 @@ def create_knowledge_requirement(
             request.related_log_id,
             request.requirement,
         )
+    except knowledgeV2Repo.RequirementAlreadyExistsError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(error),
+                "requirement_id": str(error.requirement_id),
+            },
+        ) from error
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     if result is None:
@@ -807,7 +917,7 @@ def _list_question_logs(
         page_size,
     )
     return QuestionLogPageResponse(
-        items=[_question_log_response(row) for row in rows],
+        items=_question_log_responses(rows),
         page=page,
         page_size=page_size,
         total=total,
@@ -840,10 +950,11 @@ async def search_similar_questions(request: SimilarQuestionRequest):
         query_embedding,
         request.top_k,
     )
+    question_logs = _question_log_responses([question_log for question_log, _ in rows])
     return [
         SimilarQuestionResponse(
-            **_question_log_response(question_log).model_dump(),
+            **question_log.model_dump(),
             score=1 - float(distance),
         )
-        for question_log, distance in rows
+        for question_log, (_, distance) in zip(question_logs, rows, strict=True)
     ]

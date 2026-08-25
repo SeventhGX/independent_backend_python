@@ -207,7 +207,7 @@ async def _generate_tags_with_ai(
         base_url=DEEPSEEK_BASE_URL,
     ) as client:
         completion = await client.chat.completions.create(
-            model="deepseek-v4-pro",
+            model="deepseek-v4-flash",
             messages=messages,  # type: ignore
             response_format={"type": "json_object"},
             temperature=0.1,
@@ -467,7 +467,7 @@ async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
     async with AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL) as client:
         completion = await client.chat.completions.create(
             # model=request.model,
-            model="deepseek-v4-pro",
+            model="deepseek-v4-flash",
             messages=messages,  # type: ignore
             temperature=request.temperature,
         )

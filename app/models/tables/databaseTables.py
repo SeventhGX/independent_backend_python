@@ -287,6 +287,12 @@ class KnowledgeV2Require(SQLModel, table=True):
     """
     知识库 V2 的需求，用于记录用户对知识文件的需求或改进建议
     """
+    __table_args__ = (
+        UniqueConstraint(
+            "related_log_id",
+            name="uq_knowledge_v2_require_related_log_id",
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID = Field(index=True)
