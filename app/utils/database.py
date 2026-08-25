@@ -1,7 +1,7 @@
 from pwdlib import PasswordHash
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Metadata, Sys_User
+from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Database, Metadata, Sys_User
 from app.utils.config import settings
 from app.utils.log import logger
 
@@ -47,15 +47,25 @@ def init_db():
         if metadata is None:
             logger.info("创建默认元数据...")
             initial_metadata: list[Metadata] = [
-                Metadata(field_name="database", field_desc="知识库", value="sop", desc="岗位SOP"),
-                Metadata(field_name="database", field_desc="知识库", value="sys", desc="系统操作指南"),
-                Metadata(field_name="database", field_desc="知识库", value="repair", desc="维修手册"),
                 Metadata(field_name="position", field_desc="岗位", value="TL", desc="投料"),
+                Metadata(field_name="page", field_desc="页面", value="knowledge", desc="知识库"),
                 Metadata(field_name="equipment", field_desc="设备", value="YL", desc="窑炉"),
             ]
             session.add_all(initial_metadata)
             session.commit()
             logger.info("默认元数据创建成功！")
+
+        databases = session.exec(select(Database).limit(1)).first()
+        if databases is None:
+            logger.info("创建默认知识库...")
+            initial_databases: list[Database] = [
+                Database(database_name="sop", database_desc="岗位SOP", meta_data_template=["position"]),
+                Database(database_name="sys", database_desc="系统操作指南", meta_data_template=["page"]),
+                Database(database_name="repair", database_desc="维修手册", meta_data_template=["equipment"]),
+            ]
+            session.add_all(initial_databases)
+            session.commit()
+            logger.info("默认知识库创建成功！")
     logger.info("数据库初始化完成！")
 
 
