@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -130,8 +131,95 @@ class KnowledgeV2ChatRequest(KnowledgeV2RetrieveRequest):
 
 
 class KnowledgeV2ChatResponse(BaseModel):
+    question_log_id: uuid.UUID
     answer: str
     chunks: list[KnowledgeV2ChunkResponse]
+
+
+class QuestionFeedback(str, Enum):
+    HELPFUL = "helpful"
+    NOT_HELPFUL = "not_helpful"
+    COLLECT = "collect"
+
+
+class QuestionFeedbackRequest(BaseModel):
+    feedback: QuestionFeedback
+
+
+class QuestionLogResponse(BaseModel):
+    id: uuid.UUID
+    question: str
+    answer: str | None
+    related_chunkv2_ids: list[uuid.UUID]
+    user_feedback: QuestionFeedback | None
+    create_time: datetime
+
+
+class QuestionLogPageResponse(BaseModel):
+    items: list[QuestionLogResponse]
+    page: int
+    page_size: int
+    total: int
+    pages: int
+
+
+class SimilarQuestionRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("query")
+    @classmethod
+    def strip_query(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("查询内容不能为空")
+        return value
+
+
+class SimilarQuestionResponse(QuestionLogResponse):
+    score: float
+
+
+class CreateKnowledgeV2RequirementRequest(BaseModel):
+    related_log_id: uuid.UUID
+    requirement: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("requirement")
+    @classmethod
+    def strip_requirement(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class KnowledgeV2RequirementStatus(str, Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class UpdateKnowledgeV2RequirementStatusRequest(BaseModel):
+    status: KnowledgeV2RequirementStatus
+
+
+class KnowledgeV2RequirementResponse(BaseModel):
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    owner_name: str
+    requirement: str | None
+    related_log_id: uuid.UUID | None
+    question: str | None
+    status: KnowledgeV2RequirementStatus
+    is_resolved: bool
+    related_knowledgev2_ids: list[uuid.UUID]
+    create_time: datetime
+
+
+class KnowledgeV2RequirementPageResponse(BaseModel):
+    items: list[KnowledgeV2RequirementResponse]
+    page: int
+    page_size: int
+    total: int
+    pages: int
 
 
 def _normalize_tag_names(values: list[str]) -> list[str]:

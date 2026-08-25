@@ -1,7 +1,7 @@
 import uuid
 from typing import Any, cast
 
-from sqlalchemy import delete, distinct, func
+from sqlalchemy import delete, distinct, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, col, select
 
@@ -12,7 +12,9 @@ from app.models.tables.databaseTables import (
     KnowledgeTagLinkV2,
     KnowledgeTagV2,
     KnowledgeV2,
+    KnowledgeV2Require,
     Metadata,
+    QuestionLog,
     Sys_User,
 )
 from app.utils.database import engine
@@ -42,6 +44,54 @@ def _get_or_create_tags(
             raise RuntimeError("创建公开标签失败")
         tags.append(tag)
     return tags
+
+
+def _attach_requirements(
+    session: Session,
+    requirement_ids: list[uuid.UUID],
+    knowledge_id: uuid.UUID,
+) -> None:
+    unique_ids = list(dict.fromkeys(requirement_ids))
+    if not unique_ids:
+        return
+    requirements = session.exec(
+        select(KnowledgeV2Require)
+        .where(col(KnowledgeV2Require.id).in_(unique_ids))
+        .where(col(KnowledgeV2Require.is_resolved).is_(False))
+    ).all()
+    if len(requirements) != len(unique_ids):
+        raise ValueError("包含不存在或已关闭的知识库缺口请求")
+
+    knowledge_id_value = str(knowledge_id)
+    for requirement in requirements:
+        related_ids = list(requirement.related_knowledgev2_ids or [])
+        if knowledge_id_value not in related_ids:
+            related_ids.append(knowledge_id_value)
+        requirement.related_knowledgev2_ids = related_ids
+        session.add(requirement)
+
+
+def _detach_requirements(
+    session: Session,
+    knowledge_id: uuid.UUID,
+) -> None:
+    knowledge_id_value = str(knowledge_id)
+    requirements = session.exec(
+        select(KnowledgeV2Require)
+        .where(
+            cast(Any, KnowledgeV2Require.related_knowledgev2_ids).contains(
+                [knowledge_id_value]
+            )
+        )
+    ).all()
+    for requirement in requirements:
+        related_ids = [
+            related_id
+            for related_id in requirement.related_knowledgev2_ids or []
+            if related_id != knowledge_id_value
+        ]
+        requirement.related_knowledgev2_ids = related_ids
+        session.add(requirement)
 
 
 def select_databases_by_names(database_names: list[str]):
@@ -88,6 +138,7 @@ def create_file(
     database_ids: list[uuid.UUID],
     tag_names: list[tuple[str, str]],
     chunks: list[KnowledgeChunkV2],
+    requirement_ids: list[uuid.UUID] | None = None,
 ):
     with Session(engine) as session:
         session.add(knowledge)
@@ -112,6 +163,11 @@ def create_file(
             ]
         )
         session.add_all(chunks)
+        _attach_requirements(
+            session,
+            requirement_ids or [],
+            knowledge.id,
+        )
         session.commit()
         session.refresh(knowledge)
         for tag in tags:
@@ -152,6 +208,7 @@ def replace_file_content(
     database_ids: list[uuid.UUID],
     tag_names: list[tuple[str, str]],
     chunks: list[KnowledgeChunkV2],
+    requirement_ids: list[uuid.UUID] | None = None,
 ):
     with Session(engine) as session:
         knowledge = session.exec(
@@ -201,6 +258,11 @@ def replace_file_content(
             ]
         )
         session.add_all(chunks)
+        _attach_requirements(
+            session,
+            requirement_ids or [],
+            knowledge_id,
+        )
         session.commit()
         session.refresh(knowledge)
         for tag in tags:
@@ -320,6 +382,7 @@ def delete_owned_file(knowledge_id: uuid.UUID, user_id: uuid.UUID) -> bool:
                 col(KnowledgeDatabaseLink.knowledgev2_id) == knowledge_id
             )
         )
+        _detach_requirements(session, knowledge_id)
         session.delete(knowledge)
         session.commit()
         return True
@@ -383,6 +446,37 @@ def select_files(
         ).all()
         row_by_id = {knowledge.id: (knowledge, user) for knowledge, user in rows}
         return [row_by_id[file_id] for file_id in paged_ids], int(total)
+
+
+def select_owned_file_page(
+    user_id: uuid.UUID,
+    filename: str | None,
+    page: int,
+    page_size: int,
+):
+    with Session(engine) as session:
+        statement = select(KnowledgeV2).where(col(KnowledgeV2.user_id) == user_id)
+        if filename:
+            escaped_filename = (
+                filename.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            statement = statement.where(
+                col(KnowledgeV2.filename).ilike(
+                    f"%{escaped_filename}%",
+                    escape="\\",
+                )
+            )
+        total = session.exec(
+            select(func.count()).select_from(statement.subquery())
+        ).one()
+        items = session.exec(
+            statement.order_by(col(KnowledgeV2.create_time).desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return items, int(total)
 
 
 def select_database_map(knowledge_ids: list[uuid.UUID]):
@@ -451,3 +545,193 @@ def search_similar_chunks(
                 col(KnowledgeV2.id).in_(_file_ids_for_tags(normalized_tag_names))
             )
         return session.exec(statement.order_by(distance).limit(top_k)).all()
+
+
+def select_open_requirements(requirement_ids: list[uuid.UUID]):
+    unique_ids = list(dict.fromkeys(requirement_ids))
+    if not unique_ids:
+        return []
+    with Session(engine) as session:
+        return session.exec(
+            select(KnowledgeV2Require)
+            .where(col(KnowledgeV2Require.id).in_(unique_ids))
+            .where(col(KnowledgeV2Require.is_resolved).is_(False))
+        ).all()
+
+
+def select_requirements(
+    is_resolved: bool | None,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+):
+    with Session(engine) as session:
+        statement = (
+            select(KnowledgeV2Require, Sys_User, QuestionLog.question)
+            .join(Sys_User, col(KnowledgeV2Require.user_id) == col(Sys_User.id))
+            .outerjoin(
+                QuestionLog,
+                col(KnowledgeV2Require.related_log_id) == col(QuestionLog.id),
+            )
+        )
+        if is_resolved is not None:
+            statement = statement.where(
+                col(KnowledgeV2Require.is_resolved) == is_resolved
+            )
+        if keyword:
+            escaped_keyword = (
+                keyword.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            pattern = f"%{escaped_keyword}%"
+            statement = statement.where(
+                or_(
+                    col(KnowledgeV2Require.requirement).ilike(pattern, escape="\\"),
+                    col(QuestionLog.question).ilike(pattern, escape="\\"),
+                )
+            )
+
+        total = session.exec(
+            select(func.count()).select_from(statement.subquery())
+        ).one()
+        items = session.exec(
+            statement.order_by(col(KnowledgeV2Require.create_time).desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return items, int(total)
+
+
+def update_requirement_status(
+    requirement_id: uuid.UUID,
+    user_id: uuid.UUID,
+    is_admin: bool,
+    is_resolved: bool,
+):
+    with Session(engine) as session:
+        requirement = session.get(KnowledgeV2Require, requirement_id)
+        if requirement is None:
+            return None
+        if requirement.user_id != user_id and not is_admin:
+            raise PermissionError("仅缺口所有者或管理员可以更新缺口状态")
+        requirement.is_resolved = is_resolved
+        session.add(requirement)
+        session.commit()
+        session.refresh(requirement)
+        owner = session.get(Sys_User, requirement.user_id)
+        if owner is None:
+            raise RuntimeError("知识库缺口提出者不存在")
+        question = (
+            session.get(QuestionLog, requirement.related_log_id)
+            if requirement.related_log_id
+            else None
+        )
+        return requirement, owner, question.question if question else None
+
+
+def create_question_log(question_log: QuestionLog):
+    with Session(engine) as session:
+        session.add(question_log)
+        session.commit()
+        session.refresh(question_log)
+        return question_log
+
+
+def update_question_feedback(
+    question_log_id: uuid.UUID,
+    user_id: uuid.UUID,
+    feedback: str,
+):
+    with Session(engine) as session:
+        question_log = session.exec(
+            select(QuestionLog)
+            .where(col(QuestionLog.id) == question_log_id)
+            .where(col(QuestionLog.user_id) == user_id)
+        ).first()
+        if question_log is None:
+            return None
+        question_log.user_feedback = feedback
+        session.add(question_log)
+        session.commit()
+        session.refresh(question_log)
+        return question_log
+
+
+def create_requirement(
+    user_id: uuid.UUID,
+    related_log_id: uuid.UUID,
+    requirement: str | None,
+):
+    with Session(engine) as session:
+        question_log = session.exec(
+            select(QuestionLog)
+            .where(col(QuestionLog.id) == related_log_id)
+            .where(col(QuestionLog.user_id) == user_id)
+        ).first()
+        if question_log is None:
+            return None
+        if question_log.user_feedback != "not_helpful":
+            raise ValueError("仅可为反馈为 not_helpful 的问答创建知识库缺口请求")
+
+        knowledge_requirement = KnowledgeV2Require(
+            user_id=user_id,
+            requirement=requirement,
+            related_log_id=related_log_id,
+        )
+        session.add(knowledge_requirement)
+        session.commit()
+        session.refresh(knowledge_requirement)
+        return knowledge_requirement, question_log.question
+
+
+def select_question_logs(
+    user_id: uuid.UUID | None,
+    feedback: str | None,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+):
+    with Session(engine) as session:
+        statement = select(QuestionLog)
+        if user_id is not None:
+            statement = statement.where(col(QuestionLog.user_id) == user_id)
+        if feedback is not None:
+            statement = statement.where(col(QuestionLog.user_feedback) == feedback)
+        if keyword:
+            escaped_keyword = (
+                keyword.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            statement = statement.where(
+                col(QuestionLog.question).ilike(
+                    f"%{escaped_keyword}%",
+                    escape="\\",
+                )
+            )
+
+        total = session.exec(
+            select(func.count()).select_from(statement.subquery())
+        ).one()
+        items = session.exec(
+            statement.order_by(col(QuestionLog.create_time).desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return items, int(total)
+
+
+def search_similar_questions(query_embedding: list[float], top_k: int):
+    with Session(engine) as session:
+        distance = cast(Any, QuestionLog.embedding).cosine_distance(
+            query_embedding
+        ).label("distance")
+        statement = (
+            select(QuestionLog, distance)
+            .where(col(QuestionLog.user_feedback) == "collect")
+            .where(col(QuestionLog.embedding).is_not(None))
+            .order_by(distance)
+            .limit(top_k)
+        )
+        return session.exec(statement).all()

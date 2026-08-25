@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, Column, LargeBinary, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, LargeBinary, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
@@ -252,6 +252,50 @@ class KnowledgeTagV2(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(max_length=50)
     normalized_name: str = Field(max_length=50)
+    create_time: datetime = Field(default_factory=datetime.now)
+
+
+class QuestionLog(SQLModel, table=True):
+    """
+    用户提问日志
+    """
+
+    __table_args__ = (
+        CheckConstraint(
+            "user_feedback IN ('helpful', 'not_helpful', 'collect') OR user_feedback IS NULL",
+            name="ck_question_log_user_feedback",
+        ),
+        Index(
+            "ix_question_log_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    question: str
+    answer: str | None = None
+    related_chunkv2_ids: list[str] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
+    embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1024), nullable=True))
+    user_feedback: str | None = Field(default=None, index=True)
+    create_time: datetime = Field(default_factory=datetime.now)
+
+
+class KnowledgeV2Require(SQLModel, table=True):
+    """
+    知识库 V2 的需求，用于记录用户对知识文件的需求或改进建议
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    requirement: str | None = None
+    related_log_id: uuid.UUID | None = Field(default=None, index=True)
+    is_resolved: bool = Field(default=False, index=True)
+    related_knowledgev2_ids: list[str] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
+    )
     create_time: datetime = Field(default_factory=datetime.now)
 
 

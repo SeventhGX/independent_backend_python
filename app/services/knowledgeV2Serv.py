@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.knowledge import RetrievalMethod
 from app.models.knowledge_v2 import (
     AutoTagKnowledgeV2Request,
+    CreateKnowledgeV2RequirementRequest,
     DeleteKnowledgeV2Response,
     KnowledgeV2ChatRequest,
     KnowledgeV2ChatResponse,
@@ -21,16 +22,27 @@ from app.models.knowledge_v2 import (
     KnowledgeV2DatabaseResponse,
     KnowledgeV2FileResponse,
     KnowledgeV2PageResponse,
+    KnowledgeV2RequirementPageResponse,
+    KnowledgeV2RequirementResponse,
+    KnowledgeV2RequirementStatus,
     KnowledgeV2RetrieveRequest,
     KnowledgeV2TagResponse,
     KnowledgeV2TagsResponse,
+    QuestionFeedback,
+    QuestionLogPageResponse,
+    QuestionLogResponse,
     SetKnowledgeV2TagsRequest,
+    SimilarQuestionRequest,
+    SimilarQuestionResponse,
+    UpdateKnowledgeV2RequirementStatusRequest,
 )
 from app.models.tables.databaseTables import (
     Database,
     KnowledgeChunkV2,
     KnowledgeTagV2,
     KnowledgeV2,
+    KnowledgeV2Require,
+    QuestionLog,
 )
 from app.repositories import knowledgeV2Repo
 from app.services.knowledgeServ import _generate_tags_with_ai
@@ -153,6 +165,21 @@ def _ensure_unique_md5(md5: str, exclude_id: uuid.UUID | None = None) -> None:
         )
 
 
+def _validate_requirement_ids(
+    requirement_ids: list[uuid.UUID] | None,
+) -> list[uuid.UUID]:
+    unique_ids = list(dict.fromkeys(requirement_ids or []))
+    if not unique_ids:
+        return []
+    requirements = knowledgeV2Repo.select_open_requirements(unique_ids)
+    if len(requirements) != len(unique_ids):
+        raise HTTPException(
+            status_code=404,
+            detail="包含不存在或已关闭的知识库缺口请求",
+        )
+    return unique_ids
+
+
 async def _build_chunks(
     knowledge_id: uuid.UUID,
     data: bytes,
@@ -211,6 +238,49 @@ def _file_response(
             for database in databases
         ],
         tags=[KnowledgeV2TagResponse(id=tag.id, name=tag.name) for tag in tags],
+    )
+
+
+def _question_log_response(question_log: QuestionLog) -> QuestionLogResponse:
+    return QuestionLogResponse(
+        id=question_log.id,
+        question=question_log.question,
+        answer=question_log.answer,
+        related_chunkv2_ids=[
+            uuid.UUID(chunk_id) for chunk_id in question_log.related_chunkv2_ids or []
+        ],
+        user_feedback=(
+            QuestionFeedback(question_log.user_feedback)
+            if question_log.user_feedback
+            else None
+        ),
+        create_time=question_log.create_time,
+    )
+
+
+def _requirement_response(
+    knowledge_requirement: KnowledgeV2Require,
+    owner_name: str,
+    question: str | None,
+) -> KnowledgeV2RequirementResponse:
+    return KnowledgeV2RequirementResponse(
+        id=knowledge_requirement.id,
+        owner_user_id=knowledge_requirement.user_id,
+        owner_name=owner_name,
+        requirement=knowledge_requirement.requirement,
+        related_log_id=knowledge_requirement.related_log_id,
+        question=question,
+        status=(
+            KnowledgeV2RequirementStatus.CLOSED
+            if knowledge_requirement.is_resolved
+            else KnowledgeV2RequirementStatus.OPEN
+        ),
+        is_resolved=knowledge_requirement.is_resolved,
+        related_knowledgev2_ids=[
+            uuid.UUID(knowledge_id)
+            for knowledge_id in knowledge_requirement.related_knowledgev2_ids or []
+        ],
+        create_time=knowledge_requirement.create_time,
     )
 
 
@@ -302,6 +372,7 @@ async def upload_file(
     database_names: list[str],
     metadata: dict[str, str],
     tag_names: list[str],
+    requirement_ids: list[uuid.UUID] | None = None,
 ):
     filename = (upload.filename or "").strip()
     if not filename:
@@ -309,6 +380,7 @@ async def upload_file(
     databases = _get_databases(database_names)
     _validate_metadata(metadata, databases)
     normalized_tags = _normalize_optional_tags(tag_names)
+    validated_requirement_ids = _validate_requirement_ids(requirement_ids)
     data = await upload.read()
     if not data:
         raise HTTPException(status_code=422, detail="上传文件不能为空")
@@ -337,9 +409,12 @@ async def upload_file(
             [database.id for database in databases],
             normalized_tags,
             chunks,
+            validated_requirement_ids,
         )
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail="相同内容的知识文件已存在") from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     return _file_response(saved_knowledge, user_name, databases, tags)
 
 
@@ -358,6 +433,7 @@ async def reupload_file(
     database_names: list[str],
     metadata: dict[str, str],
     tag_names: list[str],
+    requirement_ids: list[uuid.UUID] | None = None,
 ):
     existing = knowledgeV2Repo.select_owned_file(knowledge_id, user_id)
     if existing is None:
@@ -368,6 +444,7 @@ async def reupload_file(
     databases = _get_databases(database_names)
     _validate_metadata(metadata, databases)
     normalized_tags = _normalize_optional_tags(tag_names)
+    validated_requirement_ids = _validate_requirement_ids(requirement_ids)
     md5 = _calculate_md5(data)
     _ensure_unique_md5(md5, knowledge_id)
     file_type = (upload.content_type or existing.file_type).strip()
@@ -389,9 +466,12 @@ async def reupload_file(
             [database.id for database in databases],
             normalized_tags,
             chunks,
+            validated_requirement_ids,
         )
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail="相同内容的知识文件已存在") from error
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     if result is None:
         raise HTTPException(status_code=404, detail="知识文件不存在或不属于当前用户")
     knowledge, tags = result
@@ -549,7 +629,7 @@ async def retrieve_chunks(request: KnowledgeV2RetrieveRequest):
     ]
 
 
-async def rag_chat(request: KnowledgeV2ChatRequest):
+async def rag_chat(request: KnowledgeV2ChatRequest, user_id: uuid.UUID):
     chunks = await retrieve_chunks(request)
     context = "\n\n".join(
         f"[片段 {index}]\n文件: {chunk.filename}\n内容:\n{chunk.content}"
@@ -574,7 +654,196 @@ async def rag_chat(request: KnowledgeV2ChatRequest):
             messages=messages,  # type: ignore
             temperature=request.temperature,
         )
+    answer = completion.choices[0].message.content or ""
+    question_log = QuestionLog(
+        user_id=user_id,
+        question=request.query,
+        answer=answer,
+        related_chunkv2_ids=[str(chunk.chunk_id) for chunk in chunks],
+        embedding=await qwen_embedding_text(
+            f"问题：{request.query}\n回答：{answer}"
+        ),
+    )
+    saved_log = knowledgeV2Repo.create_question_log(question_log)
     return KnowledgeV2ChatResponse(
-        answer=completion.choices[0].message.content or "",
+        question_log_id=saved_log.id,
+        answer=answer,
         chunks=chunks,
     )
+
+
+def update_question_feedback(
+    question_log_id: uuid.UUID,
+    feedback: QuestionFeedback,
+    user_id: uuid.UUID,
+):
+    question_log = knowledgeV2Repo.update_question_feedback(
+        question_log_id,
+        user_id,
+        feedback.value,
+    )
+    if question_log is None:
+        raise HTTPException(status_code=404, detail="问答记录不存在或不属于当前用户")
+    return _question_log_response(question_log)
+
+
+def create_knowledge_requirement(
+    request: CreateKnowledgeV2RequirementRequest,
+    user_id: uuid.UUID,
+    user_name: str,
+):
+    try:
+        result = knowledgeV2Repo.create_requirement(
+            user_id,
+            request.related_log_id,
+            request.requirement,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if result is None:
+        raise HTTPException(status_code=404, detail="问答记录不存在或不属于当前用户")
+    knowledge_requirement, question = result
+    return _requirement_response(knowledge_requirement, user_name, question)
+
+
+def list_requirements(
+    status_filter: KnowledgeV2RequirementStatus | None,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+):
+    normalized_keyword = keyword.strip() if keyword else None
+    is_resolved = (
+        status_filter == KnowledgeV2RequirementStatus.CLOSED
+        if status_filter is not None
+        else None
+    )
+    rows, total = knowledgeV2Repo.select_requirements(
+        is_resolved,
+        normalized_keyword or None,
+        page,
+        page_size,
+    )
+    return KnowledgeV2RequirementPageResponse(
+        items=[
+            _requirement_response(requirement, owner.user_name, question)
+            for requirement, owner, question in rows
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=ceil(total / page_size) if total else 0,
+    )
+
+
+def update_requirement_status(
+    requirement_id: uuid.UUID,
+    request: UpdateKnowledgeV2RequirementStatusRequest,
+    user_id: uuid.UUID,
+    is_admin: bool,
+):
+    try:
+        result = knowledgeV2Repo.update_requirement_status(
+            requirement_id,
+            user_id,
+            is_admin,
+            request.status == KnowledgeV2RequirementStatus.CLOSED,
+        )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    if result is None:
+        raise HTTPException(status_code=404, detail="知识库缺口请求不存在")
+    requirement, owner, question = result
+    return _requirement_response(requirement, owner.user_name, question)
+
+
+def list_owned_files(
+    user_id: uuid.UUID,
+    user_name: str,
+    filename: str | None,
+    page: int,
+    page_size: int,
+):
+    normalized_filename = filename.strip() if filename else None
+    files, total = knowledgeV2Repo.select_owned_file_page(
+        user_id,
+        normalized_filename or None,
+        page,
+        page_size,
+    )
+    file_ids = [knowledge.id for knowledge in files]
+    database_map = knowledgeV2Repo.select_database_map(file_ids)
+    tag_map = knowledgeV2Repo.select_tag_map(file_ids)
+    return KnowledgeV2PageResponse(
+        items=[
+            _file_response(
+                knowledge,
+                user_name,
+                database_map.get(knowledge.id, []),
+                tag_map.get(knowledge.id, []),
+            )
+            for knowledge in files
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=ceil(total / page_size) if total else 0,
+    )
+
+
+def _list_question_logs(
+    user_id: uuid.UUID | None,
+    feedback: QuestionFeedback | None,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+):
+    normalized_keyword = keyword.strip() if keyword else None
+    rows, total = knowledgeV2Repo.select_question_logs(
+        user_id,
+        feedback.value if feedback else None,
+        normalized_keyword or None,
+        page,
+        page_size,
+    )
+    return QuestionLogPageResponse(
+        items=[_question_log_response(row) for row in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=ceil(total / page_size) if total else 0,
+    )
+
+
+def list_question_history(
+    user_id: uuid.UUID,
+    keyword: str | None,
+    page: int,
+    page_size: int,
+):
+    return _list_question_logs(user_id, None, keyword, page, page_size)
+
+
+def list_typical_cases(keyword: str | None, page: int, page_size: int):
+    return _list_question_logs(
+        None,
+        QuestionFeedback.COLLECT,
+        keyword,
+        page,
+        page_size,
+    )
+
+
+async def search_similar_questions(request: SimilarQuestionRequest):
+    query_embedding = await qwen_embedding_text(request.query)
+    rows = knowledgeV2Repo.search_similar_questions(
+        query_embedding,
+        request.top_k,
+    )
+    return [
+        SimilarQuestionResponse(
+            **_question_log_response(question_log).model_dump(),
+            score=1 - float(distance),
+        )
+        for question_log, distance in rows
+    ]
