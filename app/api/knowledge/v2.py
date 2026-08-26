@@ -234,6 +234,7 @@ async def create_knowledge_requirement(
 
 @router.get("/requirements", summary="分页查询全部知识库缺口")
 async def list_requirements(
+	current_user: UserDep,
 	page: Annotated[int, Query(ge=1)] = 1,
 	page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 	status_filter: Annotated[
@@ -247,6 +248,7 @@ async def list_requirements(
 		keyword,
 		page,
 		page_size,
+		current_user.id,
 	)
 	return {"message": "success", "code": 200, "data": data}
 

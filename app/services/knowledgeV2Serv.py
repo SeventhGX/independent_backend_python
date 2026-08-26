@@ -225,21 +225,30 @@ def _file_response(
     uploader: str,
     databases: list[Database],
     tags: list[KnowledgeTagV2],
+    requirement_ids: Sequence[uuid.UUID] = (),
 ) -> KnowledgeV2FileResponse:
     return KnowledgeV2FileResponse(
         id=knowledge.id,
         filename=knowledge.filename,
         file_type=knowledge.file_type,
+        file_size=len(knowledge.data),
         md5=knowledge.md5,
         meta_data=knowledge.meta_data or {},
         is_embedded=knowledge.is_embedded,
         create_time=knowledge.create_time,
         uploader=uploader,
         databases=[
-            KnowledgeV2DatabaseResponse(id=database.id, name=database.database_name)
+            KnowledgeV2DatabaseResponse(
+                id=database.id,
+                name=database.database_name,
+                database_name=database.database_name,
+                database_desc=database.database_desc,
+                meta_data_template=database.meta_data_template,
+            )
             for database in databases
         ],
         tags=[KnowledgeV2TagResponse(id=tag.id, name=tag.name) for tag in tags],
+        requirement_ids=list(requirement_ids),
     )
 
 
@@ -301,11 +310,13 @@ def _requirement_response(
     knowledge_requirement: KnowledgeV2Require,
     owner_name: str,
     question: str | None,
+    current_user_id: uuid.UUID,
 ) -> KnowledgeV2RequirementResponse:
     return KnowledgeV2RequirementResponse(
         id=knowledge_requirement.id,
         owner_user_id=knowledge_requirement.user_id,
         owner_name=owner_name,
+        is_owner=knowledge_requirement.user_id == current_user_id,
         requirement=knowledge_requirement.requirement,
         related_log_id=knowledge_requirement.related_log_id,
         question=question,
@@ -331,14 +342,19 @@ def get_all_tags():
 
 
 def get_all_databases():
+    databases = knowledgeV2Repo.select_all_databases()
+    stats = knowledgeV2Repo.select_database_stats()
     return [
         KnowledgeV2DatabaseDetailResponse(
             id=database.id,
             database_name=database.database_name,
             database_desc=database.database_desc,
             meta_data_template=database.meta_data_template,
+            file_count=stats.get(database.id, (0, 0, None))[0],
+            total_chunk_count=stats.get(database.id, (0, 0, None))[1],
+            latest_upload_time=stats.get(database.id, (0, 0, None))[2],
         )
-        for database in knowledgeV2Repo.select_all_databases()
+        for database in databases
     ]
 
 
@@ -454,7 +470,13 @@ async def upload_file(
         raise HTTPException(status_code=409, detail="相同内容的知识文件已存在") from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return _file_response(saved_knowledge, user_name, databases, tags)
+    return _file_response(
+        saved_knowledge,
+        user_name,
+        databases,
+        tags,
+        validated_requirement_ids,
+    )
 
 
 def download_file(knowledge_id: uuid.UUID):
@@ -514,11 +536,16 @@ async def reupload_file(
     if result is None:
         raise HTTPException(status_code=404, detail="知识文件不存在或不属于当前用户")
     knowledge, tags = result
+    requirement_ids = knowledgeV2Repo.select_requirement_map([knowledge.id]).get(
+        knowledge.id,
+        [],
+    )
     return _file_response(
         knowledge,
         user_name,
         databases,
         tags,
+        requirement_ids,
     )
 
 
@@ -574,12 +601,14 @@ def list_files(
     knowledge_ids = [knowledge.id for knowledge, _ in rows]
     database_map = knowledgeV2Repo.select_database_map(knowledge_ids)
     tag_map = knowledgeV2Repo.select_tag_map(knowledge_ids)
+    requirement_map = knowledgeV2Repo.select_requirement_map(knowledge_ids)
     items = [
         _file_response(
             knowledge,
             user.user_name,
             database_map.get(knowledge.id, []),
             tag_map.get(knowledge.id, []),
+            requirement_map.get(knowledge.id, []),
         )
         for knowledge, user in rows
     ]
@@ -813,7 +842,12 @@ def create_knowledge_requirement(
     if result is None:
         raise HTTPException(status_code=404, detail="问答记录不存在或不属于当前用户")
     knowledge_requirement, question = result
-    return _requirement_response(knowledge_requirement, user_name, question)
+    return _requirement_response(
+        knowledge_requirement,
+        user_name,
+        question,
+        user_id,
+    )
 
 
 def list_requirements(
@@ -821,6 +855,7 @@ def list_requirements(
     keyword: str | None,
     page: int,
     page_size: int,
+    user_id: uuid.UUID,
 ):
     normalized_keyword = keyword.strip() if keyword else None
     is_resolved = (
@@ -836,7 +871,12 @@ def list_requirements(
     )
     return KnowledgeV2RequirementPageResponse(
         items=[
-            _requirement_response(requirement, owner.user_name, question)
+            _requirement_response(
+                requirement,
+                owner.user_name,
+                question,
+                user_id,
+            )
             for requirement, owner, question in rows
         ],
         page=page,
@@ -864,7 +904,12 @@ def update_requirement_status(
     if result is None:
         raise HTTPException(status_code=404, detail="知识库缺口请求不存在")
     requirement, owner, question = result
-    return _requirement_response(requirement, owner.user_name, question)
+    return _requirement_response(
+        requirement,
+        owner.user_name,
+        question,
+        user_id,
+    )
 
 
 def list_owned_files(
@@ -884,6 +929,7 @@ def list_owned_files(
     file_ids = [knowledge.id for knowledge in files]
     database_map = knowledgeV2Repo.select_database_map(file_ids)
     tag_map = knowledgeV2Repo.select_tag_map(file_ids)
+    requirement_map = knowledgeV2Repo.select_requirement_map(file_ids)
     return KnowledgeV2PageResponse(
         items=[
             _file_response(
@@ -891,6 +937,7 @@ def list_owned_files(
                 user_name,
                 database_map.get(knowledge.id, []),
                 tag_map.get(knowledge.id, []),
+                requirement_map.get(knowledge.id, []),
             )
             for knowledge in files
         ],

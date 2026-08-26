@@ -1,7 +1,7 @@
 import uuid
 from typing import Any, cast
 
-from sqlalchemy import delete, distinct, func, or_
+from sqlalchemy import and_, delete, distinct, func, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
@@ -114,6 +114,41 @@ def select_all_databases():
         return session.exec(
             select(Database).order_by(col(Database.database_name))
         ).all()
+
+
+def select_database_stats():
+    with Session(engine) as session:
+        rows = session.exec(
+            select(
+                Database.id,
+                func.count(
+                    distinct(col(KnowledgeDatabaseLink.knowledgev2_id))
+                ).label("file_count"),
+                func.count(col(KnowledgeChunkV2.id)).label("total_chunk_count"),
+                func.max(col(KnowledgeV2.create_time)).label("latest_upload_time"),
+            )
+            .select_from(Database)
+            .outerjoin(
+                KnowledgeDatabaseLink,
+                and_(
+                    col(KnowledgeDatabaseLink.database_id) == col(Database.id),
+                    col(KnowledgeDatabaseLink.status) == "active",
+                ),
+            )
+            .outerjoin(
+                KnowledgeV2,
+                col(KnowledgeDatabaseLink.knowledgev2_id) == col(KnowledgeV2.id),
+            )
+            .outerjoin(
+                KnowledgeChunkV2,
+                col(KnowledgeChunkV2.knowledgev2_id) == col(KnowledgeV2.id),
+            )
+            .group_by(col(Database.id))
+        ).all()
+        return {
+            database_id: (int(file_count), int(chunk_count), latest_upload_time)
+            for database_id, file_count, chunk_count, latest_upload_time in rows
+        }
 
 
 def select_metadata_options(field_names: list[str]):
@@ -519,6 +554,37 @@ def select_tag_map(knowledge_ids: list[uuid.UUID]):
         result: dict[uuid.UUID, list[KnowledgeTagV2]] = {}
         for knowledge_id, tag in rows:
             result.setdefault(knowledge_id, []).append(tag)
+        return result
+
+
+def select_requirement_map(knowledge_ids: list[uuid.UUID]):
+    unique_ids = list(dict.fromkeys(knowledge_ids))
+    if not unique_ids:
+        return {}
+    with Session(engine) as session:
+        rows = session.exec(
+            select(
+                KnowledgeV2Require.id,
+                KnowledgeV2Require.related_knowledgev2_ids,
+            ).where(
+                or_(
+                    *(
+                        cast(
+                            Any,
+                            KnowledgeV2Require.related_knowledgev2_ids,
+                        ).contains([str(knowledge_id)])
+                        for knowledge_id in unique_ids
+                    )
+                )
+            )
+        ).all()
+        result: dict[uuid.UUID, list[uuid.UUID]] = {}
+        requested_ids = set(unique_ids)
+        for requirement_id, related_ids in rows:
+            for related_id in related_ids or []:
+                knowledge_id = uuid.UUID(related_id)
+                if knowledge_id in requested_ids:
+                    result.setdefault(knowledge_id, []).append(requirement_id)
         return result
 
 

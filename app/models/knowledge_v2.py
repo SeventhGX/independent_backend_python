@@ -42,6 +42,9 @@ class KnowledgeV2FileIdsRequest(BaseModel):
 class KnowledgeV2DatabaseResponse(BaseModel):
     id: uuid.UUID
     name: str
+    database_name: str
+    database_desc: str | None
+    meta_data_template: list[str]
 
 
 class KnowledgeV2DatabaseDetailResponse(BaseModel):
@@ -49,12 +52,16 @@ class KnowledgeV2DatabaseDetailResponse(BaseModel):
     database_name: str
     database_desc: str | None
     meta_data_template: list[str]
+    file_count: int
+    total_chunk_count: int
+    latest_upload_time: datetime | None
 
 
 class KnowledgeV2FileResponse(BaseModel):
     id: uuid.UUID
     filename: str
     file_type: str
+    file_size: int
     md5: str
     meta_data: dict[str, str]
     is_embedded: bool
@@ -62,6 +69,7 @@ class KnowledgeV2FileResponse(BaseModel):
     uploader: str
     databases: list[KnowledgeV2DatabaseResponse] = Field(default_factory=list)
     tags: list[KnowledgeV2TagResponse] = Field(default_factory=list)
+    requirement_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class KnowledgeV2PageResponse(BaseModel):
@@ -211,6 +219,7 @@ class KnowledgeV2RequirementResponse(BaseModel):
     id: uuid.UUID
     owner_user_id: uuid.UUID
     owner_name: str
+    is_owner: bool
     requirement: str | None
     related_log_id: uuid.UUID | None
     question: str | None
