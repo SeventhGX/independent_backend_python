@@ -18,7 +18,15 @@ from openai import AsyncOpenAI
 from PIL import Image
 from volcenginesdkarkruntime import AsyncArk
 
-from app.models.ai import ChatBody, ChatBodyV2, SessionShareResponse, SharedSessionResponse
+from app.models.ai import (
+    ChatBody,
+    ChatBodyV2,
+    SessionDetailResponse,
+    SessionShareOrigin,
+    SessionShareResponse,
+    SessionSummaryResponse,
+    SharedSessionResponse,
+)
 from app.models.file import NewFileRequest
 from app.models.tables.databaseTables import Chat_Model_V2, Chat_Session, Chat_Session_Share, File, User_Model_Cfg
 from app.repositories import aiRepo, fileRepo
@@ -491,16 +499,63 @@ async def export_session_to_word(session_id: uuid.UUID, user_id: uuid.UUID):
     }
 
 
-async def get_user_sessions(user_id):
-    return aiRepo.select_sessions_by_user_id(user_id)
+SHARE_META_KEY = "__share_meta__"
 
 
-async def get_session_content(session_id):
-    sessions = aiRepo.select_sessions_by_session_id(session_id)
-    if sessions:
-        return sessions
-    else:
+def _parse_share_meta(raw) -> "SessionShareOrigin | None":
+    """将 content 中的 __share_meta__ 解析为 SessionShareOrigin，解析失败时返回 None。"""
+    if raw is None:
         return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SessionShareOrigin(**raw)
+    except Exception:
+        return None
+
+
+async def get_user_sessions(user_id):
+    shared_session_ids = aiRepo.select_active_share_session_ids(user_id)
+    rows = aiRepo.select_sessions_by_user_id(user_id)
+    summaries = []
+    for row in rows:
+        summaries.append(
+            SessionSummaryResponse(
+                id=row["id"],
+                session_name=row["session_name"],
+                create_time=row["create_time"],
+                shared_from=_parse_share_meta(row.get("share_meta_raw")),
+                is_shared_by_me=row["id"] in shared_session_ids,
+            )
+        )
+    return summaries
+
+
+async def get_session_content(session_id, user_id: uuid.UUID | None = None):
+    session = aiRepo.select_sessions_by_session_id(session_id)
+    if session is None:
+        return None
+    content = session.content if isinstance(session.content, dict) else {}
+    shared_from = _parse_share_meta(content.get(SHARE_META_KEY))
+    # 剥离内部溯源字段，避免把实现细节暴露给前端，前端也无需在更新时回传该字段
+    visible_content = {key: value for key, value in content.items() if key != SHARE_META_KEY}
+    is_shared_by_me = (
+        user_id is not None and aiRepo.select_active_share_by_session_id(session.id, user_id) is not None
+    )
+    return SessionDetailResponse(
+        id=session.id,
+        user_id=session.user_id,
+        session_name=session.session_name,
+        create_time=session.create_time,
+        content=visible_content,
+        shared_from=shared_from,
+        is_shared_by_me=is_shared_by_me,
+    )
 
 
 async def generate_session_name(user_input: str) -> str:
@@ -524,7 +579,12 @@ async def add_session(chat_body: ChatBody, user_id):
 
 
 async def update_session(chat: Chat_Session):
-    return aiRepo.update_chat_session_content(chat.id, chat.content)
+    # 分享溯源信息由后端维护，不受前端传入内容影响，防止继续对话保存时被覆盖丢失
+    existing = aiRepo.select_sessions_by_session_id(chat.id)
+    new_content = dict(chat.content or {})
+    if existing and isinstance(existing.content, dict) and SHARE_META_KEY in existing.content:
+        new_content[SHARE_META_KEY] = existing.content[SHARE_META_KEY]
+    return aiRepo.update_chat_session_content(chat.id, new_content)
 
 
 async def delete_session(session_id: uuid.UUID):
@@ -609,11 +669,13 @@ async def get_shared_session(share_code: str, user_id: uuid.UUID):
     is_owner = session.user_id == user_id
     if not is_owner:
         aiRepo.increase_share_visit_count(share.id)
+    content = session.content if isinstance(session.content, dict) else {}
+    visible_content = {key: value for key, value in content.items() if key != SHARE_META_KEY}
     return SharedSessionResponse(
         share_code=share.share_code,
         session_id=session.id,
         session_name=session.session_name,
-        content=session.content or {},
+        content=visible_content,
         create_time=session.create_time,
         expire_time=share.expire_time,
         shared_by=aiRepo.select_user_name_by_id(share.user_id),
@@ -622,14 +684,21 @@ async def get_shared_session(share_code: str, user_id: uuid.UUID):
 
 
 async def save_shared_session(share_code: str, user_id: uuid.UUID, session_name: str | None = None):
-    _, session = _resolve_shared_session(share_code)
+    share, session = _resolve_shared_session(share_code)
     copied_name = (session_name or "").strip() or f"{session.session_name or '分享会话'}(分享副本)"
+    content = session.content if isinstance(session.content, dict) else {}
+    copied_content = {key: value for key, value in content.items() if key != SHARE_META_KEY}
+    copied_content[SHARE_META_KEY] = {
+        "share_code": share.share_code,
+        "shared_by": aiRepo.select_user_name_by_id(share.user_id),
+        "origin_session_id": str(session.id),
+    }
     return aiRepo.insert_chat_session(
         Chat_Session(
             user_id=user_id,
             session_name=copied_name[:200],
             create_time=datetime.now(),
-            content=session.content or {},
+            content=copied_content,
         )
     )
 

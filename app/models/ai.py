@@ -22,6 +22,30 @@ class ChatBodyV2(BaseModel):
     create_time: datetime | None = None
 
 
+class SessionShareOrigin(BaseModel):
+    share_code: str
+    shared_by: str | None = None
+    origin_session_id: uuid.UUID | None = None
+
+
+class SessionSummaryResponse(BaseModel):
+    id: uuid.UUID
+    session_name: str | None = None
+    create_time: datetime | None = None
+    shared_from: SessionShareOrigin | None = None
+    is_shared_by_me: bool = False
+
+
+class SessionDetailResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    session_name: str | None = None
+    create_time: datetime | None = None
+    content: dict | None = None
+    shared_from: SessionShareOrigin | None = None
+    is_shared_by_me: bool = False
+
+
 class CreateSessionShareRequest(BaseModel):
     session_id: uuid.UUID
     expire_days: int | None = Field(default=None, ge=1, le=365)

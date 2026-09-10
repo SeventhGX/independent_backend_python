@@ -30,7 +30,7 @@ async def get_user_sessions(current_user=Depends(get_current_active_user)):
 
 @router.get("/session", summary="获取指定会话的内容")
 async def get_session_content(session_id: str, current_user=Depends(get_current_active_user)):
-    session = await aiServ.get_session_content(session_id)
+    session = await aiServ.get_session_content(session_id, current_user.id)
     return {
         "message": "success",
         "code": 200,

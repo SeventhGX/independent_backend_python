@@ -14,11 +14,19 @@ from sqlmodel import Session, select, col
 def select_sessions_by_user_id(user_id: uuid.UUID):
     with Session(engine) as session:
         rows = session.exec(
-            select(Chat_Session.id, Chat_Session.session_name, Chat_Session.create_time)
+            select(
+                Chat_Session.id,
+                Chat_Session.session_name,
+                Chat_Session.create_time,
+                Chat_Session.content.op("->>")("__share_meta__"),
+            )
             .where(Chat_Session.user_id == user_id)
             .order_by(col(Chat_Session.create_time).desc())
         ).all()
-        return [{"id": row[0], "session_name": row[1], "create_time": row[2]} for row in rows]
+        return [
+            {"id": row[0], "session_name": row[1], "create_time": row[2], "share_meta_raw": row[3]}
+            for row in rows
+        ]
 
 
 def select_sessions_by_session_id(session_id: uuid.UUID):
@@ -159,6 +167,18 @@ def select_active_share_by_session_id(session_id: uuid.UUID, user_id: uuid.UUID)
             )
             .order_by(col(Chat_Session_Share.create_time).desc())
         ).first()
+
+
+def select_active_share_session_ids(user_id: uuid.UUID):
+    """返回当前用户已创建过分享（未取消）的会话 id 集合，用于批量标记「已分享」。"""
+    with Session(engine) as db_session:
+        rows = db_session.exec(
+            select(Chat_Session_Share.session_id).where(
+                Chat_Session_Share.user_id == user_id,
+                Chat_Session_Share.del_flag == False,  # noqa: E712
+            )
+        ).all()
+        return set(rows)
 
 
 def select_share_by_code(share_code: str):
