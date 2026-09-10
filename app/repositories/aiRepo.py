@@ -1,4 +1,11 @@
-from app.models.tables.databaseTables import Chat_Session, Chat_Model, Chat_Model_V2, User_Model_Cfg
+from app.models.tables.databaseTables import (
+    Chat_Model,
+    Chat_Model_V2,
+    Chat_Session,
+    Chat_Session_Share,
+    Sys_User,
+    User_Model_Cfg,
+)
 import uuid
 from app.utils.database import engine
 from sqlmodel import Session, select, col
@@ -42,6 +49,11 @@ def delete_chat_session(session_id: uuid.UUID):
     with Session(engine) as db_session:
         session = db_session.exec(select(Chat_Session).where(Chat_Session.id == session_id)).first()
         if session:
+            shares = db_session.exec(
+                select(Chat_Session_Share).where(Chat_Session_Share.session_id == session_id)
+            ).all()
+            for share in shares:
+                db_session.delete(share)
             db_session.delete(session)
             db_session.commit()
             return True
@@ -126,3 +138,82 @@ def update_user_model_cfg_cfg(cfg_id: uuid.UUID, cfg: dict):
             db_session.refresh(cfg_row)
             return cfg_row
         return None
+
+
+def insert_chat_session_share(share: Chat_Session_Share):
+    with Session(engine) as db_session:
+        db_session.add(share)
+        db_session.commit()
+        db_session.refresh(share)
+        return share
+
+
+def select_active_share_by_session_id(session_id: uuid.UUID, user_id: uuid.UUID):
+    with Session(engine) as db_session:
+        return db_session.exec(
+            select(Chat_Session_Share)
+            .where(
+                Chat_Session_Share.session_id == session_id,
+                Chat_Session_Share.user_id == user_id,
+                Chat_Session_Share.del_flag == False,  # noqa: E712
+            )
+            .order_by(col(Chat_Session_Share.create_time).desc())
+        ).first()
+
+
+def select_share_by_code(share_code: str):
+    with Session(engine) as db_session:
+        return db_session.exec(
+            select(Chat_Session_Share).where(
+                Chat_Session_Share.share_code == share_code,
+                Chat_Session_Share.del_flag == False,  # noqa: E712
+            )
+        ).first()
+
+
+def select_shares_by_user_id(user_id: uuid.UUID):
+    with Session(engine) as db_session:
+        rows = db_session.exec(
+            select(Chat_Session_Share, Chat_Session.session_name)
+            .join(Chat_Session, col(Chat_Session_Share.session_id) == col(Chat_Session.id))
+            .where(
+                Chat_Session_Share.user_id == user_id,
+                Chat_Session_Share.del_flag == False,  # noqa: E712
+            )
+            .order_by(col(Chat_Session_Share.create_time).desc())
+        ).all()
+        return [(row[0], row[1]) for row in rows]
+
+
+def revoke_chat_session_share(share_code: str, user_id: uuid.UUID):
+    with Session(engine) as db_session:
+        share = db_session.exec(
+            select(Chat_Session_Share).where(
+                Chat_Session_Share.share_code == share_code,
+                Chat_Session_Share.user_id == user_id,
+                Chat_Session_Share.del_flag == False,  # noqa: E712
+            )
+        ).first()
+        if not share:
+            return False
+        share.del_flag = True
+        db_session.add(share)
+        db_session.commit()
+        return True
+
+
+def increase_share_visit_count(share_id: uuid.UUID):
+    with Session(engine) as db_session:
+        share = db_session.exec(select(Chat_Session_Share).where(Chat_Session_Share.id == share_id)).first()
+        if not share:
+            return None
+        share.visit_count = (share.visit_count or 0) + 1
+        db_session.add(share)
+        db_session.commit()
+        db_session.refresh(share)
+        return share
+
+
+def select_user_name_by_id(user_id: uuid.UUID):
+    with Session(engine) as db_session:
+        return db_session.exec(select(Sys_User.user_name).where(Sys_User.id == user_id)).first()

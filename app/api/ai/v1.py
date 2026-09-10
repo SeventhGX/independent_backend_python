@@ -1,6 +1,10 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse, Response
-from app.models.ai import ChatBody
+from app.models.ai import (
+    ChatBody,
+    CreateSessionShareRequest,
+    SaveSharedSessionRequest,
+)
 from app.models.file import NewFileRequest, FileResponse
 from app.services import aiServ
 from app.models.tables.databaseTables import Chat_Session
@@ -59,6 +63,55 @@ async def delete_session(session_id: uuid.UUID, current_user=Depends(get_current
 @router.post("/update_session", summary="更新会话信息")
 async def update_session(chat: Chat_Session, current_user=Depends(get_current_active_user)):
     session = await aiServ.update_session(chat)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": session,
+    }
+
+
+@router.post("/share_session", summary="创建会话分享链接")
+async def share_session(request: CreateSessionShareRequest, current_user=Depends(get_current_active_user)):
+    share = await aiServ.create_session_share(request.session_id, current_user.id, request.expire_days)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": share,
+    }
+
+
+@router.get("/share_sessions", summary="获取当前用户创建的分享列表")
+async def get_session_shares(current_user=Depends(get_current_active_user)):
+    shares = await aiServ.get_user_session_shares(current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": shares,
+    }
+
+
+@router.delete("/share_session", summary="取消会话分享")
+async def cancel_session_share(share_code: str, current_user=Depends(get_current_active_user)):
+    await aiServ.revoke_session_share(share_code, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+    }
+
+
+@router.get("/shared_session", summary="通过分享链接查看会话内容")
+async def get_shared_session(share_code: str, current_user=Depends(get_current_active_user)):
+    session = await aiServ.get_shared_session(share_code, current_user.id)
+    return {
+        "message": "success",
+        "code": 200,
+        "data": session,
+    }
+
+
+@router.post("/save_shared_session", summary="将分享的会话保存为自己的会话")
+async def save_shared_session(request: SaveSharedSessionRequest, current_user=Depends(get_current_active_user)):
+    session = await aiServ.save_shared_session(request.share_code, current_user.id, request.session_name)
     return {
         "message": "success",
         "code": 200,

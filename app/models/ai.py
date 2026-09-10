@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uuid
 
 
@@ -20,3 +20,35 @@ class ChatBodyV2(BaseModel):
     content: dict | None = None
     kwargs: dict | None = None
     create_time: datetime | None = None
+
+
+class CreateSessionShareRequest(BaseModel):
+    session_id: uuid.UUID
+    expire_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class SessionShareResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    session_name: str | None = None
+    share_code: str
+    create_time: datetime | None = None
+    expire_time: datetime | None = None
+    visit_count: int = 0
+    is_expired: bool = False
+
+
+class SharedSessionResponse(BaseModel):
+    share_code: str
+    session_id: uuid.UUID
+    session_name: str | None = None
+    content: dict | None = None
+    create_time: datetime | None = None
+    expire_time: datetime | None = None
+    shared_by: str | None = None
+    is_owner: bool = False
+
+
+class SaveSharedSessionRequest(BaseModel):
+    share_code: str = Field(min_length=1, max_length=64)
+    session_name: str | None = Field(default=None, max_length=200)

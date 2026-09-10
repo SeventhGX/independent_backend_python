@@ -63,6 +63,23 @@ class Chat_Session(SQLModel, table=True):
     content: dict = Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
+class Chat_Session_Share(SQLModel, table=True):
+    """
+    聊天会话分享，通过 share_code 生成分享链接供其他登录用户查看
+    """
+
+    __table_args__ = (UniqueConstraint("share_code", name="uq_chat_session_share_code"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    session_id: uuid.UUID = Field(index=True)
+    user_id: uuid.UUID = Field(index=True)
+    share_code: str = Field(max_length=64, index=True)
+    expire_time: datetime | None = None
+    visit_count: int = 0
+    del_flag: bool = False
+    create_time: datetime | None = Field(default_factory=datetime.now)
+
+
 class Chat_Model(SQLModel, table=True):
     """
     聊天模型

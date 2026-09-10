@@ -2,9 +2,10 @@ import base64
 import binascii
 import json
 import re
+import secrets
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any
 
@@ -12,13 +13,14 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
+from fastapi import HTTPException
 from openai import AsyncOpenAI
 from PIL import Image
 from volcenginesdkarkruntime import AsyncArk
 
-from app.models.ai import ChatBody, ChatBodyV2
+from app.models.ai import ChatBody, ChatBodyV2, SessionShareResponse, SharedSessionResponse
 from app.models.file import NewFileRequest
-from app.models.tables.databaseTables import Chat_Model_V2, Chat_Session, File, User_Model_Cfg
+from app.models.tables.databaseTables import Chat_Model_V2, Chat_Session, Chat_Session_Share, File, User_Model_Cfg
 from app.repositories import aiRepo, fileRepo
 from app.utils.chatbot import Chatbot
 from app.utils.config import settings
@@ -29,6 +31,8 @@ CODE_FONT = "Consolas"
 USER_HEADING_COLOR = RGBColor(31, 78, 121)
 ASSISTANT_HEADING_COLOR = RGBColor(83, 129, 53)
 DEFAULT_HEADING_COLOR = RGBColor(64, 64, 64)
+SHARE_CODE_BYTES = 16
+MAX_SHARE_CODE_RETRY = 5
 
 
 def _create_model_client(model_data: Chat_Model_V2) -> Any:
@@ -525,6 +529,109 @@ async def update_session(chat: Chat_Session):
 
 async def delete_session(session_id: uuid.UUID):
     return aiRepo.delete_chat_session(session_id)
+
+
+def _generate_share_code() -> str:
+    return secrets.token_urlsafe(SHARE_CODE_BYTES)
+
+
+def _is_share_expired(share: Chat_Session_Share) -> bool:
+    return share.expire_time is not None and share.expire_time <= datetime.now()
+
+
+def _build_share_response(share: Chat_Session_Share, session_name: str | None) -> SessionShareResponse:
+    return SessionShareResponse(
+        id=share.id,
+        session_id=share.session_id,
+        session_name=session_name,
+        share_code=share.share_code,
+        create_time=share.create_time,
+        expire_time=share.expire_time,
+        visit_count=share.visit_count or 0,
+        is_expired=_is_share_expired(share),
+    )
+
+
+def _resolve_shared_session(share_code: str) -> tuple[Chat_Session_Share, Chat_Session]:
+    """校验分享码并返回分享记录与对应会话，无效或过期时抛出异常。"""
+    share = aiRepo.select_share_by_code(share_code)
+    if share is None:
+        raise HTTPException(status_code=404, detail="分享链接不存在或已被取消")
+    if _is_share_expired(share):
+        raise HTTPException(status_code=410, detail="分享链接已过期")
+    session = aiRepo.select_sessions_by_session_id(share.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="分享的会话已被删除")
+    return share, session
+
+
+async def create_session_share(session_id: uuid.UUID, user_id: uuid.UUID, expire_days: int | None = None):
+    session = aiRepo.select_session_by_id_and_user_id(session_id, user_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="会话不存在或不属于当前用户")
+
+    existing_share = aiRepo.select_active_share_by_session_id(session_id, user_id)
+    if existing_share and not _is_share_expired(existing_share):
+        # 未指定有效期时复用已有链接，保证同一会话的分享地址稳定
+        if expire_days is None:
+            return _build_share_response(existing_share, session.session_name)
+        aiRepo.revoke_chat_session_share(existing_share.share_code, user_id)
+
+    expire_time = datetime.now() + timedelta(days=expire_days) if expire_days else None
+    for _ in range(MAX_SHARE_CODE_RETRY):
+        share_code = _generate_share_code()
+        if aiRepo.select_share_by_code(share_code) is None:
+            share = aiRepo.insert_chat_session_share(
+                Chat_Session_Share(
+                    session_id=session_id,
+                    user_id=user_id,
+                    share_code=share_code,
+                    expire_time=expire_time,
+                )
+            )
+            return _build_share_response(share, session.session_name)
+    raise HTTPException(status_code=500, detail="分享码生成失败，请重试")
+
+
+async def get_user_session_shares(user_id: uuid.UUID):
+    shares = aiRepo.select_shares_by_user_id(user_id)
+    return [_build_share_response(share, session_name) for share, session_name in shares]
+
+
+async def revoke_session_share(share_code: str, user_id: uuid.UUID):
+    if not aiRepo.revoke_chat_session_share(share_code, user_id):
+        raise HTTPException(status_code=404, detail="分享链接不存在或不属于当前用户")
+    return True
+
+
+async def get_shared_session(share_code: str, user_id: uuid.UUID):
+    share, session = _resolve_shared_session(share_code)
+    is_owner = session.user_id == user_id
+    if not is_owner:
+        aiRepo.increase_share_visit_count(share.id)
+    return SharedSessionResponse(
+        share_code=share.share_code,
+        session_id=session.id,
+        session_name=session.session_name,
+        content=session.content or {},
+        create_time=session.create_time,
+        expire_time=share.expire_time,
+        shared_by=aiRepo.select_user_name_by_id(share.user_id),
+        is_owner=is_owner,
+    )
+
+
+async def save_shared_session(share_code: str, user_id: uuid.UUID, session_name: str | None = None):
+    _, session = _resolve_shared_session(share_code)
+    copied_name = (session_name or "").strip() or f"{session.session_name or '分享会话'}(分享副本)"
+    return aiRepo.insert_chat_session(
+        Chat_Session(
+            user_id=user_id,
+            session_name=copied_name[:200],
+            create_time=datetime.now(),
+            content=session.content or {},
+        )
+    )
 
 
 async def get_models():
