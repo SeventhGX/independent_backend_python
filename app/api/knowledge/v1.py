@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from app.models.knowledge import (
     AutoTagKnowledgeRequest,
@@ -12,7 +12,7 @@ from app.models.knowledge import (
     SetKnowledgeTagsRequest,
 )
 from app.services import knowledgeServ
-from app.utils.auth import get_current_active_user
+from app.utils.auth import UserDep
 
 router = APIRouter(prefix="/knowledge/v1")
 
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/knowledge/v1")
 @router.post("/upload_file")
 async def upload_file(
     file: Annotated[list[UploadFile], File()],
+    current_user: UserDep,
     tag_names: Annotated[list[str] | None, Form()] = None,
-    current_user=Depends(get_current_active_user),
 ):
     uploaded_files = await knowledgeServ.upload_files(
         file,
@@ -37,7 +37,7 @@ async def upload_file(
 
 
 @router.post("/get_all")
-async def get_all_knowledge(current_user=Depends(get_current_active_user)):
+async def get_all_knowledge(current_user: UserDep):
     knowledge_list = await knowledgeServ.get_all_knowledge(current_user.id)
     return {
         "message": "success",
@@ -47,7 +47,7 @@ async def get_all_knowledge(current_user=Depends(get_current_active_user)):
 
 
 @router.get("/tags")
-async def get_all_tags(current_user=Depends(get_current_active_user)):
+async def get_all_tags(current_user: UserDep):
     tags = await knowledgeServ.get_all_tags(current_user.id)
     return {
         "message": "success",
@@ -59,7 +59,7 @@ async def get_all_tags(current_user=Depends(get_current_active_user)):
 @router.post("/set_tags")
 async def set_file_tags(
     request: SetKnowledgeTagsRequest,
-    current_user=Depends(get_current_active_user),
+    current_user: UserDep,
 ):
     tags = knowledgeServ.set_file_tags(request, current_user.id)
     return {
@@ -72,7 +72,7 @@ async def set_file_tags(
 @router.post("/auto_tag")
 async def auto_tag_file(
     request: AutoTagKnowledgeRequest,
-    current_user=Depends(get_current_active_user),
+    current_user: UserDep,
 ):
     tags = await knowledgeServ.auto_tag_file(request, current_user.id)
     return {
@@ -83,7 +83,7 @@ async def auto_tag_file(
 
 
 @router.post("/delete_files")
-async def delete_files(request: DeleteKnowledgeFilesRequest, current_user=Depends(get_current_active_user)):
+async def delete_files(request: DeleteKnowledgeFilesRequest, current_user: UserDep):
     deleted_files = await knowledgeServ.delete_files(request.file_ids, current_user.id)
     return {
         "message": "success",
@@ -95,7 +95,7 @@ async def delete_files(request: DeleteKnowledgeFilesRequest, current_user=Depend
 @router.post("/publish_files")
 async def publish_files(
     request: KnowledgeFileIdsRequest,
-    current_user=Depends(get_current_active_user),
+    current_user: UserDep,
 ):
     published_files = knowledgeServ.publish_files(request.file_ids, current_user.id)
     return {
@@ -108,7 +108,7 @@ async def publish_files(
 @router.post("/unpublish_files")
 async def unpublish_files(
     request: KnowledgeFileIdsRequest,
-    current_user=Depends(get_current_active_user),
+    current_user: UserDep,
 ):
     unpublished_files = knowledgeServ.unpublish_files(request.file_ids, current_user.id)
     return {
@@ -119,7 +119,7 @@ async def unpublish_files(
 
 
 @router.post("/embedding_files")
-async def embedding_files(fileids: list[uuid.UUID], current_user=Depends(get_current_active_user)):
+async def embedding_files(fileids: list[uuid.UUID], current_user: UserDep):
     embedded_files = await knowledgeServ.embedding_files(fileids, current_user.id)
     return {
         "message": "success",
@@ -129,7 +129,7 @@ async def embedding_files(fileids: list[uuid.UUID], current_user=Depends(get_cur
 
 
 @router.post("/retrieve")
-async def retrieve_chunks(request: RagRetrieveRequest, current_user=Depends(get_current_active_user)):
+async def retrieve_chunks(request: RagRetrieveRequest, current_user: UserDep):
     chunks = await knowledgeServ.retrieve_chunks(request, current_user.id)
     return {
         "message": "success",
@@ -139,7 +139,7 @@ async def retrieve_chunks(request: RagRetrieveRequest, current_user=Depends(get_
 
 
 @router.post("/chat")
-async def rag_chat(request: RagChatRequest, current_user=Depends(get_current_active_user)):
+async def rag_chat(request: RagChatRequest, current_user: UserDep):
     answer = await knowledgeServ.rag_chat(request, current_user.id)
     return {
         "message": "success",

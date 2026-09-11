@@ -1,9 +1,16 @@
 import asyncio
-from app.repositories import articleRepo
-from app.models.article import ArticleBody, ArticleQueryBody, ArticleDateRangeBody, MailDataBody
-from app.models.tables.databaseTables import Article
 from datetime import date
+
 import markdown
+
+from app.models.article import (
+    ArticleBody,
+    ArticleDateRangeBody,
+    ArticleQueryBody,
+    MailDataBody,
+)
+from app.models.tables.databaseTables import Article
+from app.repositories import articleRepo
 from app.utils.crawler import Crawler
 from app.utils.mail import send_email
 

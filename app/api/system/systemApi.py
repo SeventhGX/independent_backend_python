@@ -1,21 +1,19 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.models.system import NewUserBody
+from app.models.system import NewUserBody, Token, UserInfo
 from app.repositories import systemRepo
 from app.utils.auth import (
+    TokenDep,
+    UserDep,
     authenticate_user,
     create_access_token,
-    get_current_active_user,
-    get_current_user_with_token,
     revoke_token,
 )
-from app.models.system import UserInfo, Token
 from app.utils.config import settings
 
 router = APIRouter(prefix="/system")
@@ -50,7 +48,7 @@ async def login_for_access_token(
 
 
 @router.get("/users/me", response_model=UserInfo, summary="获取当前登录用户信息")
-async def read_users_me(current_user=Depends(get_current_active_user)):
+async def read_users_me(current_user: UserDep):
     if not current_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -72,7 +70,7 @@ async def read_users_me(current_user=Depends(get_current_active_user)):
 
 
 @router.post("/logout", summary="用户注销登录")
-async def logout(user_and_token: tuple = Depends(get_current_user_with_token)):
+async def logout(user_and_token: TokenDep):
     _, token = user_and_token
     payload = jwt.decode(
         token,
@@ -86,7 +84,7 @@ async def logout(user_and_token: tuple = Depends(get_current_user_with_token)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token 格式无效，请重新登录后再注销。",
         )
-    exp_dt = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+    exp_dt = datetime.fromtimestamp(exp_ts, tz=UTC)
     revoke_token(jti, exp_dt)
     return {"code": 200, "message": "注销成功"}
 

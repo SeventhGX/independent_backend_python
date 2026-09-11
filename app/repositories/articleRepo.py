@@ -1,7 +1,10 @@
-from app.models.tables.databaseTables import Article
 from datetime import date
+
+from sqlmodel import Session, col, or_, select
+
+from app.models.tables.databaseTables import Article
 from app.utils.database import engine
-from sqlmodel import Session, select, or_, col
+
 # from typing import Sequence
 
 

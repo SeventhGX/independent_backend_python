@@ -1,11 +1,15 @@
-from app.utils.config import settings
-from openai import AsyncOpenAI
-import dashscope
 from io import BytesIO
 
+import dashscope
 from langchain_core.documents import Document
-from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 from markitdown import MarkItDown
+from openai import AsyncOpenAI
+
+from app.utils.config import settings
 
 markitdown = MarkItDown()
 QWEN_EMBEDDING_BATCH_SIZE = 10

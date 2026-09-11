@@ -1,7 +1,7 @@
 import base64
 import binascii
-from io import BytesIO
 import uuid
+from io import BytesIO
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 

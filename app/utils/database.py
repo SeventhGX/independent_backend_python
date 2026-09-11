@@ -1,7 +1,12 @@
 from pwdlib import PasswordHash
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.models.tables.databaseTables import DEFAULT_ADMIN_USER_CODE, Database, Metadata, Sys_User
+from app.models.tables.databaseTables import (
+    DEFAULT_ADMIN_USER_CODE,
+    Database,
+    Metadata,
+    Sys_User,
+)
 from app.utils.config import settings
 from app.utils.log import logger
 

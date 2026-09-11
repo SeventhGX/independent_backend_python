@@ -1,23 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
 from datetime import date
-from app.services import articleServ
+
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
+
 from app.models.article import (
     ArticleBody,
-    MailDataBody,
-    ArticleQueryBody,
-    ArticleDateRangeBody,
     ArticleConclusionBody,
+    ArticleDateRangeBody,
+    ArticleQueryBody,
+    MailDataBody,
     SearchBody,
 )
+from app.services import articleServ
+from app.utils.auth import UserDep
 from app.utils.crawler import Crawler
-from app.utils.auth import get_current_active_user
 
 router = APIRouter(prefix="/articles/v1")
 
 
 @router.post("/get_all")
-async def get_all_articles(current_user=Depends(get_current_active_user)):
+async def get_all_articles(current_user: UserDep):
     result = await articleServ.get_all_articles()
     result["message"] = "success"  # type: ignore
     result["code"] = 200  # type: ignore
@@ -26,7 +28,7 @@ async def get_all_articles(current_user=Depends(get_current_active_user)):
 
 @router.post("/get_by_mail_body")
 async def get_articles_by_mail_body(
-    mail_body: ArticleQueryBody, current_user=Depends(get_current_active_user)
+    mail_body: ArticleQueryBody, current_user: UserDep
 ):
     return {
         "message": "success",
@@ -37,7 +39,7 @@ async def get_articles_by_mail_body(
 
 @router.post("/get_by_date_range")
 async def get_articles_by_date_range(
-    date_range: ArticleDateRangeBody, current_user=Depends(get_current_active_user)
+    date_range: ArticleDateRangeBody, current_user: UserDep
 ):
     return {
         "message": "success",
@@ -47,7 +49,7 @@ async def get_articles_by_date_range(
 
 
 @router.post("/get_by_mail_date")
-async def get_articles_by_mail_date(mail_date: date, current_user=Depends(get_current_active_user)):
+async def get_articles_by_mail_date(mail_date: date, current_user: UserDep):
     result = await articleServ.get_articles_by_mail_date(mail_date)
     result["message"] = "success"  # type: ignore
     result["code"] = 200  # type: ignore
@@ -55,7 +57,7 @@ async def get_articles_by_mail_date(mail_date: date, current_user=Depends(get_cu
 
 
 @router.post("/md_to_html")
-async def md_to_html(mail_date_body: MailDataBody, current_user=Depends(get_current_active_user)):
+async def md_to_html(mail_date_body: MailDataBody, current_user: UserDep):
     result = await articleServ.trans_md_to_html(mail_date_body.body)
     result["message"] = "success"  # type: ignore
     result["code"] = 200  # type: ignore
@@ -63,7 +65,7 @@ async def md_to_html(mail_date_body: MailDataBody, current_user=Depends(get_curr
 
 
 @router.post("/send_mail")
-async def send_mail(mail_data_body: MailDataBody, current_user=Depends(get_current_active_user)):
+async def send_mail(mail_data_body: MailDataBody, current_user: UserDep):
     try:
         result = await articleServ.send_mail(mail_data_body)
     except ValueError as e:
@@ -77,7 +79,7 @@ async def send_mail(mail_data_body: MailDataBody, current_user=Depends(get_curre
 
 @router.post("/add_by_url")
 async def add_article_by_url(
-    url: str, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+    url: str, current_user: UserDep, crawler_type: str = "doubao"
 ):
     article = await articleServ.add_article_by_url(url, crawler_type)
     return {
@@ -88,7 +90,7 @@ async def add_article_by_url(
 
 
 @router.post("/url_stream")
-async def url_stream(url: str, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)):
+async def url_stream(url: str, current_user: UserDep, crawler_type: str = "doubao"):
     crawler = Crawler(crawler_type=crawler_type)
     return StreamingResponse(
         crawler.craw_stream_generator(url),
@@ -99,7 +101,7 @@ async def url_stream(url: str, crawler_type: str = "doubao", current_user=Depend
 
 @router.post("/chat_stream")
 async def chat_stream(
-    body: ArticleConclusionBody, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+    body: ArticleConclusionBody, current_user: UserDep, crawler_type: str = "doubao"
 ):
     crawler = Crawler(crawler_type=crawler_type)
     messages = [
@@ -115,7 +117,7 @@ async def chat_stream(
 
 @router.post("/search_stream")
 async def search(
-    body: SearchBody, crawler_type: str = "doubao", current_user=Depends(get_current_active_user)
+    body: SearchBody, current_user: UserDep, crawler_type: str = "doubao"
 ):
     crawler = Crawler(crawler_type=crawler_type, system_prompt=body.system_prompt)
     return StreamingResponse(
@@ -126,7 +128,7 @@ async def search(
 
 
 @router.post("/add_by_body")
-async def add_article_by_body(article_body: ArticleBody, current_user=Depends(get_current_active_user)):
+async def add_article_by_body(article_body: ArticleBody, current_user: UserDep):
     article = await articleServ.add_article_by_body(article_body)
     return {
         "message": "success",

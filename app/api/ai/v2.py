@@ -1,15 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from app.models.ai import ChatBodyV2
 from app.services import aiServ
-from app.utils.auth import get_current_active_user
+from app.utils.auth import UserDep
 
 router = APIRouter(prefix="/ai/v2")
 
 
 @router.get("/models", summary="获取可用的模型列表")
-async def get_available_models(current_user=Depends(get_current_active_user)):
+async def get_available_models(current_user: UserDep):
     models = await aiServ.get_models_v2(current_user.id)
     return {
         "message": "success",
@@ -19,7 +19,7 @@ async def get_available_models(current_user=Depends(get_current_active_user)):
 
 
 @router.post("/chat_stream", summary="实时聊天流")
-async def chat_stream(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+async def chat_stream(chat_body: ChatBodyV2, current_user: UserDep):
     stream_generator = aiServ.chat_stream(
         model=chat_body.model,
         messages=chat_body.content.get("messages", []),  # type: ignore
@@ -34,7 +34,7 @@ async def chat_stream(chat_body: ChatBodyV2, current_user=Depends(get_current_ac
 
 
 @router.post("/image_generate", summary="图像生成")
-async def image_generate(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+async def image_generate(chat_body: ChatBodyV2, current_user: UserDep):
     result = await aiServ.image_generate(
         model=chat_body.model,
         prompt=chat_body.content.get("prompt", ""),  # type: ignore
@@ -49,7 +49,7 @@ async def image_generate(chat_body: ChatBodyV2, current_user=Depends(get_current
 
 
 @router.post("/image_edit", summary="图像编辑")
-async def image_edit(chat_body: ChatBodyV2, current_user=Depends(get_current_active_user)):
+async def image_edit(chat_body: ChatBodyV2, current_user: UserDep):
     if not chat_body.content or not chat_body.content.get("image") or not chat_body.content.get("prompt"):
         return {
             "message": "image and prompt are required",

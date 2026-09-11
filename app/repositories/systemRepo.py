@@ -1,9 +1,9 @@
-from app.models.tables.databaseTables import Sys_User
-from app.models.system import NewUserBody
-from app.utils.database import engine
-from sqlmodel import Session, select, or_
-
 from pwdlib import PasswordHash
+from sqlmodel import Session, or_, select
+
+from app.models.system import NewUserBody
+from app.models.tables.databaseTables import Sys_User
+from app.utils.database import engine
 
 
 def insert_sys_user(new_user_body: NewUserBody):

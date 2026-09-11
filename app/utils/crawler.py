@@ -1,9 +1,10 @@
 import asyncio
+import json
 
 from volcenginesdkarkruntime import Ark, AsyncArk
-from app.utils.config import settings
+
 from app.models.tables.databaseTables import Article
-import json
+from app.utils.config import settings
 
 # ---------------------------------------------------------------------------
 # 豆包爬取与搜索工具

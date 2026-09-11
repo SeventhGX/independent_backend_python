@@ -28,7 +28,13 @@ from app.models.ai import (
     SharedSessionResponse,
 )
 from app.models.file import NewFileRequest
-from app.models.tables.databaseTables import Chat_Model_V2, Chat_Session, Chat_Session_Share, File, User_Model_Cfg
+from app.models.tables.databaseTables import (
+    Chat_Model_V2,
+    Chat_Session,
+    Chat_Session_Share,
+    File,
+    User_Model_Cfg,
+)
 from app.repositories import aiRepo, fileRepo
 from app.utils.chatbot import Chatbot
 from app.utils.config import settings

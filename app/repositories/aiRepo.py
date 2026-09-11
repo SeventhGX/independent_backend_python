@@ -1,3 +1,7 @@
+import uuid
+
+from sqlmodel import Session, col, select
+
 from app.models.tables.databaseTables import (
     Chat_Model,
     Chat_Model_V2,
@@ -6,9 +10,7 @@ from app.models.tables.databaseTables import (
     Sys_User,
     User_Model_Cfg,
 )
-import uuid
 from app.utils.database import engine
-from sqlmodel import Session, select, col
 
 
 def select_sessions_by_user_id(user_id: uuid.UUID):

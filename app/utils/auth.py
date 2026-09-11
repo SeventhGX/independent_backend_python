@@ -126,13 +126,16 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     return user
 
 
+CurrentUserDep = Annotated[Sys_User, Depends(get_current_user)]
+
+
 async def get_current_user_with_token(token: Annotated[str, Depends(oauth2_scheme)]):
     """与 get_current_user 相同，但同时返回原始 token 字符串，供注销使用。"""
     user = await get_current_user(token)
     return user, token
 
 
-async def get_current_active_user(current_user=Depends(get_current_user)):
+async def get_current_active_user(current_user: CurrentUserDep):
     """确保当前用户未被删除/禁用。"""
     if current_user.del_flag:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已停用")
@@ -140,3 +143,4 @@ async def get_current_active_user(current_user=Depends(get_current_user)):
 
 
 UserDep = Annotated[Sys_User, Depends(get_current_active_user)]
+TokenDep = Annotated[tuple[Sys_User, str], Depends(get_current_user_with_token)]

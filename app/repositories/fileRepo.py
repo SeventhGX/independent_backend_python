@@ -1,8 +1,10 @@
-from app.models.tables.databaseTables import File
 import base64
 import uuid
+
+from sqlmodel import Session, col, select
+
+from app.models.tables.databaseTables import File
 from app.utils.database import engine
-from sqlmodel import Session, select, col
 
 
 def _is_image_file(file: File) -> bool:

@@ -1,6 +1,7 @@
+from sqlmodel import Session, select
+
 from app.models.tables.databaseTables import Article, Recipient
 from app.utils.database import engine
-from sqlmodel import Session, select
 
 
 def select_all_recipients():

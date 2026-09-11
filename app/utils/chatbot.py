@@ -1,7 +1,9 @@
-from app.utils.config import settings
-from openai import OpenAI, AsyncOpenAI
-import httpx
 import json
+
+import httpx
+from openai import AsyncOpenAI, OpenAI
+
+from app.utils.config import settings
 
 # ---------------------------------------------------------------------------
 # 模型适配器

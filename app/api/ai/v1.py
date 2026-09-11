@@ -1,25 +1,26 @@
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse, Response
+import base64
+import uuid
+from urllib.parse import quote
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response, StreamingResponse
+
 from app.models.ai import (
     ChatBody,
     CreateSessionShareRequest,
     SaveSharedSessionRequest,
 )
-from app.models.file import NewFileRequest, FileResponse
-from app.services import aiServ
+from app.models.file import FileResponse, NewFileRequest
 from app.models.tables.databaseTables import Chat_Session
+from app.services import aiServ
+from app.utils.auth import UserDep
 from app.utils.chatbot import Chatbot
-from app.utils.auth import get_current_active_user
-from fastapi import Depends, HTTPException
-import uuid
-from urllib.parse import quote
-import base64
 
 router = APIRouter(prefix="/ai/v1")
 
 
 @router.get("/sessions", summary="获取当前用户的会话列表")
-async def get_user_sessions(current_user=Depends(get_current_active_user)):
+async def get_user_sessions(current_user: UserDep):
     data = await aiServ.get_user_sessions(current_user.id)
     return {
         "message": "success",
@@ -29,7 +30,7 @@ async def get_user_sessions(current_user=Depends(get_current_active_user)):
 
 
 @router.get("/session", summary="获取指定会话的内容")
-async def get_session_content(session_id: str, current_user=Depends(get_current_active_user)):
+async def get_session_content(session_id: str, current_user: UserDep):
     session = await aiServ.get_session_content(session_id, current_user.id)
     return {
         "message": "success",
@@ -39,7 +40,7 @@ async def get_session_content(session_id: str, current_user=Depends(get_current_
 
 
 @router.post("/add_session", summary="添加新的会话")
-async def add_session(chat_body: ChatBody, current_user=Depends(get_current_active_user)):
+async def add_session(chat_body: ChatBody, current_user: UserDep):
     session = await aiServ.add_session(chat_body, current_user.id)
     return {
         "message": "success",
@@ -49,7 +50,7 @@ async def add_session(chat_body: ChatBody, current_user=Depends(get_current_acti
 
 
 @router.delete("/delete_session", summary="删除会话")
-async def delete_session(session_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+async def delete_session(session_id: uuid.UUID, current_user: UserDep):
     success = await aiServ.delete_session(session_id)
     if success:
         return {
@@ -61,7 +62,7 @@ async def delete_session(session_id: uuid.UUID, current_user=Depends(get_current
 
 
 @router.post("/update_session", summary="更新会话信息")
-async def update_session(chat: Chat_Session, current_user=Depends(get_current_active_user)):
+async def update_session(chat: Chat_Session, current_user: UserDep):
     session = await aiServ.update_session(chat)
     return {
         "message": "success",
@@ -71,7 +72,7 @@ async def update_session(chat: Chat_Session, current_user=Depends(get_current_ac
 
 
 @router.post("/share_session", summary="创建会话分享链接")
-async def share_session(request: CreateSessionShareRequest, current_user=Depends(get_current_active_user)):
+async def share_session(request: CreateSessionShareRequest, current_user: UserDep):
     share = await aiServ.create_session_share(request.session_id, current_user.id, request.expire_days)
     return {
         "message": "success",
@@ -81,7 +82,7 @@ async def share_session(request: CreateSessionShareRequest, current_user=Depends
 
 
 @router.get("/share_sessions", summary="获取当前用户创建的分享列表")
-async def get_session_shares(current_user=Depends(get_current_active_user)):
+async def get_session_shares(current_user: UserDep):
     shares = await aiServ.get_user_session_shares(current_user.id)
     return {
         "message": "success",
@@ -91,7 +92,7 @@ async def get_session_shares(current_user=Depends(get_current_active_user)):
 
 
 @router.delete("/share_session", summary="取消会话分享")
-async def cancel_session_share(share_code: str, current_user=Depends(get_current_active_user)):
+async def cancel_session_share(share_code: str, current_user: UserDep):
     await aiServ.revoke_session_share(share_code, current_user.id)
     return {
         "message": "success",
@@ -100,7 +101,7 @@ async def cancel_session_share(share_code: str, current_user=Depends(get_current
 
 
 @router.get("/shared_session", summary="通过分享链接查看会话内容")
-async def get_shared_session(share_code: str, current_user=Depends(get_current_active_user)):
+async def get_shared_session(share_code: str, current_user: UserDep):
     session = await aiServ.get_shared_session(share_code, current_user.id)
     return {
         "message": "success",
@@ -110,7 +111,7 @@ async def get_shared_session(share_code: str, current_user=Depends(get_current_a
 
 
 @router.post("/save_shared_session", summary="将分享的会话保存为自己的会话")
-async def save_shared_session(request: SaveSharedSessionRequest, current_user=Depends(get_current_active_user)):
+async def save_shared_session(request: SaveSharedSessionRequest, current_user: UserDep):
     session = await aiServ.save_shared_session(request.share_code, current_user.id, request.session_name)
     return {
         "message": "success",
@@ -120,7 +121,7 @@ async def save_shared_session(request: SaveSharedSessionRequest, current_user=De
 
 
 @router.get("/models", summary="获取可用的模型列表")
-async def get_available_models(current_user=Depends(get_current_active_user)):
+async def get_available_models(current_user: UserDep):
     models = await aiServ.get_models()
     return {
         "message": "success",
@@ -136,7 +137,7 @@ async def get_available_models(current_user=Depends(get_current_active_user)):
 
 
 @router.post("/chat_stream", summary="实时聊天流")
-async def chat_stream(chat_body: ChatBody, current_user=Depends(get_current_active_user)):
+async def chat_stream(chat_body: ChatBody, current_user: UserDep):
     chatbot = Chatbot(modelType=chat_body.model_type or "DeepSeek")
     stream_generator = chatbot.async_chat_stream(
         model=chat_body.model or "deepseek-chat",
@@ -150,7 +151,7 @@ async def chat_stream(chat_body: ChatBody, current_user=Depends(get_current_acti
 
 
 @router.post("/save_file", summary="保存文件")
-async def save_file(file_req: NewFileRequest, current_user=Depends(get_current_active_user)):
+async def save_file(file_req: NewFileRequest, current_user: UserDep):
     file = await aiServ.save_file(file_req)
     return {
         "message": "success",
@@ -160,7 +161,7 @@ async def save_file(file_req: NewFileRequest, current_user=Depends(get_current_a
 
 
 @router.get("/file", summary="根据id获取文件", response_model=None)
-async def get_file(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+async def get_file(file_id: uuid.UUID, current_user: UserDep):
     file = await aiServ.get_file_by_id(file_id)
     if file is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -178,7 +179,7 @@ async def get_file(file_id: uuid.UUID, current_user=Depends(get_current_active_u
 
 
 @router.get("/file_compression", summary="根据id获取文件并压缩", response_model=None)
-async def get_file_compression(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+async def get_file_compression(file_id: uuid.UUID, current_user: UserDep):
     file = await aiServ.get_file_by_id(file_id)
     if file is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -197,7 +198,7 @@ async def get_file_compression(file_id: uuid.UUID, current_user=Depends(get_curr
 
 
 @router.get("/file_download", summary="根据id获取文件blob下载")
-async def get_file_download(file_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+async def get_file_download(file_id: uuid.UUID, current_user: UserDep):
     file = await aiServ.get_file_by_id(file_id)
     if file is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -215,7 +216,7 @@ async def get_file_download(file_id: uuid.UUID, current_user=Depends(get_current
 
 
 @router.get("/session_word_download", summary="根据会话id导出Word下载")
-async def get_session_word_download(session_id: uuid.UUID, current_user=Depends(get_current_active_user)):
+async def get_session_word_download(session_id: uuid.UUID, current_user: UserDep):
     word_file = await aiServ.export_session_to_word(session_id, current_user.id)
     if word_file is None:
         raise HTTPException(status_code=404, detail="Session not found")
