@@ -1,6 +1,7 @@
 from io import BytesIO
 
 import dashscope
+import httpx
 from langchain_core.documents import Document
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
@@ -13,6 +14,8 @@ from app.utils.config import settings
 
 markitdown = MarkItDown()
 QWEN_EMBEDDING_BATCH_SIZE = 10
+QWEN_RERANK_URL = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
+QWEN_RERANK_MODEL = "qwen3.7-text-rerank"
 
 # ---------------------------------------------------------------------------
 # 通义千问向量化工具
@@ -42,6 +45,29 @@ async def qwen_embedding_text(input_text: str):
     """生成单条文本向量，返回批量接口的第一条结果。"""
     embeddings = await qwen_embedding_texts([input_text])
     return embeddings[0]
+
+
+async def qwen_rerank_texts(query: str, documents: list[str], top_n: int) -> list[dict]:
+    """调用 Qwen text-rerank API，返回按相关性降序排列的 {index, relevance_score} 列表。"""
+    if not documents:
+        return []
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            QWEN_RERANK_URL,
+            headers={
+                "Authorization": f"Bearer {settings.QWEN_EMBEDDING_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": QWEN_RERANK_MODEL,
+                "input": {"query": query, "documents": documents},
+                "parameters": {"top_n": top_n, "return_documents": False},
+            },
+        )
+        response.raise_for_status()
+        result = response.json()
+    return result["output"]["results"]
 
 
 def qwen_embedding_multi(text: str | None = None, image: str | None = None, video: str | None = None):

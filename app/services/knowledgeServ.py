@@ -30,6 +30,7 @@ from app.utils.embedding import (
     extract_markdown,
     qwen_embedding_text,
     qwen_embedding_texts,
+    qwen_rerank_texts,
 )
 
 KNOWLEDGE_FILE_TYPE_PREFIX = "knowledge"
@@ -403,11 +404,12 @@ def _rerank_hybrid(
 
 
 async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
+    initial_top_k = request.rerank_top_k if request.enable_rerank else request.top_k
     query_embedding = await qwen_embedding_text(request.query)
     candidate_count = (
-        request.top_k * HYBRID_CANDIDATE_MULTIPLIER
+        initial_top_k * HYBRID_CANDIDATE_MULTIPLIER
         if request.retrieval_method == RetrievalMethod.HYBRID
-        else request.top_k
+        else initial_top_k
     )
     rows = knowledgeRepo.search_similar_chunks(
         query_embedding=query_embedding,
@@ -419,7 +421,7 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
         reranked_rows = _rerank_hybrid(
             rows,
             request.query,
-            request.top_k,
+            initial_top_k,
             request.semantic_weight,
             request.keyword_weight,
         )
@@ -428,7 +430,7 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
             (chunk, 1 - float(distance), None, 1 - float(distance))
             for chunk, distance in rows
         ]
-    return [
+    chunks = [
         RagChunkResponse(
             chunk_id=chunk.id,
             file_id=chunk.file_id,
@@ -442,6 +444,22 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
         )
         for chunk, semantic_score, keyword_score, score in reranked_rows
     ]
+    if request.enable_rerank and chunks:
+        chunks = await _rerank_chunks(request.query, chunks, request.rerank_top_n)
+    return chunks
+
+
+async def _rerank_chunks(
+    query: str, chunks: list[RagChunkResponse], top_n: int
+) -> list[RagChunkResponse]:
+    results = await qwen_rerank_texts(query, [chunk.content for chunk in chunks], top_n)
+    reranked_chunks = []
+    for result in results:
+        chunk = chunks[result["index"]]
+        chunk.rerank_score = result["relevance_score"]
+        chunk.score = result["relevance_score"]
+        reranked_chunks.append(chunk)
+    return reranked_chunks
 
 
 def _build_rag_context(chunks: list[RagChunkResponse]) -> str:

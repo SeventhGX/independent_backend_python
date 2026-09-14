@@ -89,11 +89,20 @@ class RagRetrieveRequest(BaseModel):
     retrieval_method: RetrievalMethod = RetrievalMethod.VECTOR
     semantic_weight: float = Field(default=0.7, ge=0, le=1)
     keyword_weight: float = Field(default=0.3, ge=0, le=1)
+    enable_rerank: bool = False
+    rerank_top_k: int = Field(default=30, ge=1, le=200)
+    rerank_top_n: int = Field(default=5, ge=1, le=100)
 
     @model_validator(mode="after")
     def validate_hybrid_weights(self) -> Self:
         if abs(self.semantic_weight + self.keyword_weight - 1) > 1e-6:
             raise ValueError("semantic_weight 与 keyword_weight 之和必须为 1")
+        return self
+
+    @model_validator(mode="after")
+    def validate_rerank_top_n(self) -> Self:
+        if self.enable_rerank and self.rerank_top_n > self.rerank_top_k:
+            raise ValueError("rerank_top_n 不能大于 rerank_top_k")
         return self
 
 
@@ -106,6 +115,7 @@ class RagChunkResponse(BaseModel):
     score: float
     semantic_score: float
     keyword_score: float | None = None
+    rerank_score: float | None = None
     retrieval_method: RetrievalMethod
 
 
