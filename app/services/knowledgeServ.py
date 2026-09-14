@@ -403,7 +403,10 @@ def _rerank_hybrid(
     return sorted(reranked_rows, key=lambda row: row[3], reverse=True)[:top_k]
 
 
-async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
+async def _retrieve_initial_chunks(
+    request: RagRetrieveRequest, user_id: uuid.UUID
+) -> list[RagChunkResponse]:
+    """按 top_k（或开启 rerank 时的 rerank_top_k）执行初筛检索。"""
     initial_top_k = request.rerank_top_k if request.enable_rerank else request.top_k
     query_embedding = await qwen_embedding_text(request.query)
     candidate_count = (
@@ -430,7 +433,7 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
             (chunk, 1 - float(distance), None, 1 - float(distance))
             for chunk, distance in rows
         ]
-    chunks = [
+    return [
         RagChunkResponse(
             chunk_id=chunk.id,
             file_id=chunk.file_id,
@@ -444,9 +447,25 @@ async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
         )
         for chunk, semantic_score, keyword_score, score in reranked_rows
     ]
-    if request.enable_rerank and chunks:
-        chunks = await _rerank_chunks(request.query, chunks, request.rerank_top_n)
-    return chunks
+
+
+async def _retrieve_chunks_with_stages(
+    request: RagRetrieveRequest, user_id: uuid.UUID
+) -> tuple[list[RagChunkResponse], list[RagChunkResponse]]:
+    """返回 (初筛 chunks, 最终 chunks)；未开启 rerank 时两者为同一份数据。"""
+    initial_chunks = await _retrieve_initial_chunks(request, user_id)
+    if request.enable_rerank and initial_chunks:
+        final_chunks = await _rerank_chunks(
+            request.query, initial_chunks, request.rerank_top_n
+        )
+    else:
+        final_chunks = initial_chunks
+    return initial_chunks, final_chunks
+
+
+async def retrieve_chunks(request: RagRetrieveRequest, user_id: uuid.UUID):
+    _, final_chunks = await _retrieve_chunks_with_stages(request, user_id)
+    return final_chunks
 
 
 async def _rerank_chunks(
@@ -455,7 +474,7 @@ async def _rerank_chunks(
     results = await qwen_rerank_texts(query, [chunk.content for chunk in chunks], top_n)
     reranked_chunks = []
     for result in results:
-        chunk = chunks[result["index"]]
+        chunk = chunks[result["index"]].model_copy()
         chunk.rerank_score = result["relevance_score"]
         chunk.score = result["relevance_score"]
         reranked_chunks.append(chunk)
@@ -469,10 +488,9 @@ def _build_rag_context(chunks: list[RagChunkResponse]) -> str:
     )
 
 
-async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
-    chunks = await retrieve_chunks(request, user_id)
+def _chat_messages(request: RagChatRequest, chunks: list[RagChunkResponse]):
     context = _build_rag_context(chunks)
-    messages = [
+    return [
         {
             "role": "system",
             "content": "你是一个严谨的知识库问答助手。请只依据给定的知识库片段回答；如果片段不足以回答，请明确说明无法从知识库中确定。",
@@ -482,6 +500,16 @@ async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
             "content": f"知识库片段：\n{context or '无匹配片段'}\n\n用户问题：\n{request.query}",
         },
     ]
+
+
+def _sse_event(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
+    chunks = await retrieve_chunks(request, user_id)
+    messages = _chat_messages(request, chunks)
     async with AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL) as client:
         completion = await client.chat.completions.create(
             # model=request.model,
@@ -491,3 +519,42 @@ async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):
         )
     answer = completion.choices[0].message.content or ""
     return RagChatResponse(answer=answer, chunks=chunks)
+
+
+async def rag_chat_stream(request: RagChatRequest, user_id: uuid.UUID):
+    yield _sse_event("progress", {"stage": "retrieving", "message": "正在检索知识库..."})
+    initial_chunks = await _retrieve_initial_chunks(request, user_id)
+
+    if request.enable_rerank and initial_chunks:
+        yield _sse_event(
+            "chunks",
+            {"initial_chunks": [chunk.model_dump(mode="json") for chunk in initial_chunks]},
+        )
+        yield _sse_event("progress", {"stage": "reranking", "message": "正在重排序检索结果..."})
+        chunks = await _rerank_chunks(request.query, initial_chunks, request.rerank_top_n)
+        yield _sse_event(
+            "chunks",
+            {"reranked_chunks": [chunk.model_dump(mode="json") for chunk in chunks]},
+        )
+    else:
+        chunks = initial_chunks
+        yield _sse_event(
+            "chunks",
+            {"chunks": [chunk.model_dump(mode="json") for chunk in chunks]},
+        )
+
+    yield _sse_event("progress", {"stage": "answering", "message": "正在生成回答..."})
+    messages = _chat_messages(request, chunks)
+    async with AsyncOpenAI(api_key=settings.DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL) as client:
+        completion = await client.chat.completions.create(
+            model="deepseek-v4-flash",
+            messages=messages,  # type: ignore
+            temperature=request.temperature,
+            stream=True,
+        )
+        async for completion_chunk in completion:
+            content = completion_chunk.choices[0].delta.content or ""
+            if content:
+                yield _sse_event("answer", {"answer": content})
+
+    yield _sse_event("done", {})

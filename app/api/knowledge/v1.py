@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.models.knowledge import (
     AutoTagKnowledgeRequest,
@@ -146,3 +147,15 @@ async def rag_chat(request: RagChatRequest, current_user: UserDep):
         "code": 200,
         "data": answer,
     }
+
+
+@router.post("/chat_stream")
+async def rag_chat_stream(request: RagChatRequest, current_user: UserDep):
+    return StreamingResponse(
+        knowledgeServ.rag_chat_stream(request, current_user.id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
