@@ -1,11 +1,13 @@
+import asyncio
 import json
 import re
 import unicodedata
 import uuid
 from collections import Counter
+from weakref import WeakValueDictionary
 
 from fastapi import HTTPException, UploadFile
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.models.knowledge import (
     PUBLIC_KNOWLEDGE_SOURCE_PREFIX,
@@ -37,6 +39,25 @@ KNOWLEDGE_FILE_TYPE_PREFIX = "knowledge"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 HYBRID_CANDIDATE_MULTIPLIER = 4
 AUTO_TAG_CONTENT_LIMIT = 120000
+MAX_EMBEDDING_WORKERS = 20
+MAX_EMBEDDING_WORKERS_PER_USER = 4
+_global_embedding_semaphore = asyncio.Semaphore(MAX_EMBEDDING_WORKERS)
+_user_embedding_semaphores: WeakValueDictionary[uuid.UUID, asyncio.Semaphore] = (
+    WeakValueDictionary()
+)
+
+
+def _get_user_embedding_semaphore(user_id: uuid.UUID) -> asyncio.Semaphore:
+    semaphore = _user_embedding_semaphores.get(user_id)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(MAX_EMBEDDING_WORKERS_PER_USER)
+        _user_embedding_semaphores[user_id] = semaphore
+    return semaphore
+
+
+def _sse_event(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    return f"event: {event}\ndata: {payload}\n\n"
 
 
 def _build_knowledge_file_type(content_type: str | None):
@@ -306,54 +327,188 @@ def unpublish_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
     )
 
 
+def _chunk_single_file(file: File):
+    if not file or not file.data:
+        return []
+    extracted_text = extract_markdown(file.data, file.file_type, file.filename)
+    return chunk_markdown(
+        extracted_text,
+        metadata={
+            "filename": file.filename,
+            "file_type": file.file_type.replace(f"{KNOWLEDGE_FILE_TYPE_PREFIX}/", "")
+            if file.file_type
+            else None,
+        },
+        chunk_size=600,
+        chunk_overlap=80,
+    )
+
+
 def chunk_files(file_ids: list[uuid.UUID]):
     files = fileRepo.select_files_by_ids(file_ids)
     chunked_files = []
     for file in files:
         if not file or not file.data:
             continue
-        # text_content = file.data.decode("utf-8", errors="ignore")
-        extracted_text = extract_markdown(file.data, file.file_type, file.filename)
-        chunks = chunk_markdown(
-            extracted_text,
-            metadata={
-                "filename": file.filename,
-                "file_type": file.file_type.replace(f"{KNOWLEDGE_FILE_TYPE_PREFIX}/", "")
-                if file.file_type
-                else None,
-            },
-            chunk_size=600,
-            chunk_overlap=80,
-        )
+        chunks = _chunk_single_file(file)
         chunked_files.append((file.id, chunks))
     return chunked_files
 
 
+async def _embed_single_file(
+    file: File,
+    user_semaphore: asyncio.Semaphore,
+) -> dict:
+    async with user_semaphore, _global_embedding_semaphore:
+        try:
+            chunks = await asyncio.to_thread(_chunk_single_file, file)
+            valid_chunks = [chunk for chunk in chunks if chunk.page_content.strip()]
+            embeddings = (
+                await qwen_embedding_texts([chunk.page_content for chunk in valid_chunks])
+                if valid_chunks
+                else []
+            )
+            chunk_rows = [
+                Chunks(
+                    file_id=file.id,
+                    chunk_index=chunk_index,
+                    meta_data=chunk.metadata,
+                    content=chunk.page_content,
+                    embedding=embedding,
+                )
+                for chunk_index, (chunk, embedding) in enumerate(zip(valid_chunks, embeddings))
+            ]
+            chunk_count = await asyncio.to_thread(
+                knowledgeRepo.replace_file_chunks, file.id, chunk_rows
+            )
+            return {
+                "file_id": str(file.id),
+                "filename": file.filename,
+                "chunk_count": chunk_count,
+                "status": "success",
+            }
+        except (
+            OpenAIError,
+            ValueError,
+            RuntimeError,
+            OSError,
+            KeyError,
+            TypeError,
+            HTTPException,
+        ) as error:
+            return {
+                "file_id": str(file.id),
+                "filename": file.filename,
+                "chunk_count": 0,
+                "status": "error",
+                "error": str(error),
+            }
+
+
+async def embedding_files_stream(file_ids: list[uuid.UUID], user_id: uuid.UUID):
+    knowledge_files = knowledgeRepo.select_knowledge_by_file_ids(file_ids, user_id)
+    file_ids_to_embed = list(
+        dict.fromkeys(
+            [knowledge.file_id for knowledge in knowledge_files if not knowledge.is_embedded]
+        )
+    )
+    total = len(file_ids_to_embed)
+
+    if total == 0:
+        yield _sse_event("done", {"total": 0, "completed": 0, "embedded_files": []})
+        return
+
+    yield _sse_event(
+        "start",
+        {
+            "total": total,
+            "completed": 0,
+            "max_workers": MAX_EMBEDDING_WORKERS,
+            "max_workers_per_user": MAX_EMBEDDING_WORKERS_PER_USER,
+        },
+    )
+
+    files = fileRepo.select_files_by_ids(file_ids_to_embed)
+    file_map = {file.id: file for file in files if file and file.data}
+    missing_ids = [fid for fid in file_ids_to_embed if fid not in file_map]
+
+    user_semaphore = _get_user_embedding_semaphore(user_id)
+    tasks = [
+        _embed_single_file(file, user_semaphore) for file in file_map.values()
+    ]
+
+    completed_count = 0
+    all_results = []
+
+    for fid in missing_ids:
+        completed_count += 1
+        res = {"file_id": str(fid), "chunk_count": 0}
+        all_results.append(res)
+        yield _sse_event(
+            "progress",
+            {
+                "file_id": str(fid),
+                "chunk_count": 0,
+                "completed": completed_count,
+                "total": total,
+                "status": "empty",
+            },
+        )
+
+    for future in asyncio.as_completed(tasks):
+        result = await future
+        completed_count += 1
+        if result.get("status") == "success":
+            all_results.append({"file_id": result["file_id"], "chunk_count": result["chunk_count"]})
+        event_data = {
+            "file_id": result["file_id"],
+            "filename": result.get("filename"),
+            "chunk_count": result.get("chunk_count", 0),
+            "completed": completed_count,
+            "total": total,
+            "status": result.get("status", "success"),
+        }
+        if "error" in result:
+            event_data["error"] = result["error"]
+        yield _sse_event("progress", event_data)
+
+    yield _sse_event(
+        "done",
+        {
+            "total": total,
+            "completed": completed_count,
+            "embedded_files": all_results,
+        },
+    )
+
+
 async def embedding_files(file_ids: list[uuid.UUID], user_id: uuid.UUID):
     knowledge_files = knowledgeRepo.select_knowledge_by_file_ids(file_ids, user_id)
-    file_ids_to_embed = [knowledge.file_id for knowledge in knowledge_files if not knowledge.is_embedded]
-    chunked_files = chunk_files(file_ids_to_embed)
-
-    embedded_files = []
-    for file_id, chunks in chunked_files:
-        valid_chunks = [chunk for chunk in chunks if chunk.page_content.strip()]
-        embeddings = (
-            await qwen_embedding_texts([chunk.page_content for chunk in valid_chunks]) if valid_chunks else []
+    file_ids_to_embed = list(
+        dict.fromkeys(
+            [knowledge.file_id for knowledge in knowledge_files if not knowledge.is_embedded]
         )
-        chunk_rows = [
-            Chunks(
-                file_id=file_id,
-                chunk_index=chunk_index,
-                meta_data=chunk.metadata,
-                content=chunk.page_content,
-                embedding=embedding,
-            )
-            for chunk_index, (chunk, embedding) in enumerate(zip(valid_chunks, embeddings))
-        ]
-        chunk_count = knowledgeRepo.replace_file_chunks(file_id, chunk_rows)
-        embedded_files.append({"file_id": file_id, "chunk_count": chunk_count})
+    )
+    if not file_ids_to_embed:
+        return []
 
-    return embedded_files
+    files = fileRepo.select_files_by_ids(file_ids_to_embed)
+    file_map = {file.id: file for file in files if file and file.data}
+
+    user_semaphore = _get_user_embedding_semaphore(user_id)
+    tasks = [
+        _embed_single_file(file, user_semaphore) for file in file_map.values()
+    ]
+    results = await asyncio.gather(*tasks)
+
+    return [
+        {
+            "file_id": uuid.UUID(r["file_id"]) if isinstance(r["file_id"], str) else r["file_id"],
+            "chunk_count": r["chunk_count"],
+        }
+        for r in results
+        if r.get("status") == "success"
+    ]
 
 
 def _tokenize_for_keyword_search(text: str) -> list[str]:
@@ -500,11 +655,6 @@ def _chat_messages(request: RagChatRequest, chunks: list[RagChunkResponse]):
             "content": f"知识库片段：\n{context or '无匹配片段'}\n\n用户问题：\n{request.query}",
         },
     ]
-
-
-def _sse_event(event: str, data: dict) -> str:
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    return f"event: {event}\ndata: {payload}\n\n"
 
 
 async def rag_chat(request: RagChatRequest, user_id: uuid.UUID):

@@ -121,12 +121,14 @@ async def unpublish_files(
 
 @router.post("/embedding_files")
 async def embedding_files(fileids: list[uuid.UUID], current_user: UserDep):
-    embedded_files = await knowledgeServ.embedding_files(fileids, current_user.id)
-    return {
-        "message": "success",
-        "code": 200,
-        "data": embedded_files,
-    }
+    return StreamingResponse(
+        knowledgeServ.embedding_files_stream(fileids, current_user.id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/retrieve")
