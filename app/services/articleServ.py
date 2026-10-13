@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import date
 
 import markdown
@@ -8,8 +9,10 @@ from app.models.article import (
     ArticleDateRangeBody,
     ArticleQueryBody,
     MailDataBody,
+    SearchPromptTemplateCreateBody,
+    SearchPromptTemplateResponse,
 )
-from app.models.tables.databaseTables import Article
+from app.models.tables.databaseTables import Article, Search_Prompt_Template
 from app.repositories import articleRepo
 from app.utils.crawler import Crawler
 from app.utils.mail import send_email
@@ -191,6 +194,43 @@ async def add_article_by_body(article_body: ArticleBody):
         mail_date=article_body.mail_date,
     )
     return articleRepo.insert_article(article)
+
+
+def _search_prompt_template_response(
+    template: Search_Prompt_Template, user_name: str | None, current_user_id: uuid.UUID
+) -> SearchPromptTemplateResponse:
+    return SearchPromptTemplateResponse(
+        id=template.id,
+        template_name=template.template_name,
+        description=template.description,
+        system_prompt=template.system_prompt,
+        user_id=template.user_id,
+        user_name=user_name,
+        is_owner=template.user_id == current_user_id,
+        create_time=template.create_time,
+    )
+
+
+async def get_search_prompt_templates(current_user_id: uuid.UUID, template_name: str | None = None):
+    rows = articleRepo.select_search_prompt_templates(template_name)
+    return [_search_prompt_template_response(template, user_name, current_user_id) for template, user_name in rows]
+
+
+async def create_search_prompt_template(
+    body: SearchPromptTemplateCreateBody, current_user_id: uuid.UUID, current_user_name: str
+):
+    template = Search_Prompt_Template(
+        user_id=current_user_id,
+        template_name=body.template_name,
+        description=body.description,
+        system_prompt=body.system_prompt,
+    )
+    template = articleRepo.insert_search_prompt_template(template)
+    return _search_prompt_template_response(template, current_user_name, current_user_id)
+
+
+async def delete_search_prompt_template(template_id: uuid.UUID, current_user_id: uuid.UUID) -> bool:
+    return articleRepo.delete_search_prompt_template(template_id, current_user_id)
 
 
 if __name__ == "__main__":

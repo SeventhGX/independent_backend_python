@@ -1,6 +1,7 @@
+import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ArticleBody(BaseModel):
@@ -55,3 +56,22 @@ class ArticleConclusionBody(BaseModel):
 class SearchBody(BaseModel):
     system_prompt: str | None = None
     content: str
+
+
+class SearchPromptTemplateCreateBody(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    template_name: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+    system_prompt: str = Field(min_length=1)
+
+
+class SearchPromptTemplateResponse(BaseModel):
+    id: uuid.UUID
+    template_name: str
+    description: str | None = None
+    system_prompt: str
+    user_id: uuid.UUID
+    user_name: str | None = None
+    is_owner: bool
+    create_time: datetime

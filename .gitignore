@@ -9,6 +9,7 @@ docs/
 log/
 tests/
 .vscode/
+.claude/
 functionDemo/
 .env
 .env.local

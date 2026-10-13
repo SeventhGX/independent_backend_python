@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, status
@@ -10,6 +11,7 @@ from app.models.article import (
     ArticleQueryBody,
     MailDataBody,
     SearchBody,
+    SearchPromptTemplateCreateBody,
 )
 from app.services import articleServ
 from app.utils.auth import UserDep
@@ -125,6 +127,35 @@ async def search(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/search_prompt_template", summary="获取搜索提示词模版列表")
+async def get_search_prompt_templates(current_user: UserDep, template_name: str | None = None):
+    return {
+        "message": "success",
+        "code": 200,
+        "data": await articleServ.get_search_prompt_templates(current_user.id, template_name),
+    }
+
+
+@router.post("/search_prompt_template", summary="新增搜索提示词模版", status_code=status.HTTP_201_CREATED)
+async def create_search_prompt_template(body: SearchPromptTemplateCreateBody, current_user: UserDep):
+    return {
+        "message": "success",
+        "code": 201,
+        "data": await articleServ.create_search_prompt_template(body, current_user.id, current_user.user_name),
+    }
+
+
+@router.delete("/search_prompt_template", summary="删除搜索提示词模版")
+async def delete_search_prompt_template(template_id: uuid.UUID, current_user: UserDep):
+    try:
+        deleted = await articleServ.delete_search_prompt_template(template_id, current_user.id)
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="提示词模版不存在")
+    return {"message": "success", "code": 200, "data": None}
 
 
 @router.post("/add_by_body")

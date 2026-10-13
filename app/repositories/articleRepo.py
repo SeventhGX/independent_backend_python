@@ -1,8 +1,9 @@
+import uuid
 from datetime import date
 
 from sqlmodel import Session, col, or_, select
 
-from app.models.tables.databaseTables import Article
+from app.models.tables.databaseTables import Article, Search_Prompt_Template, Sys_User
 from app.utils.database import engine
 
 # from typing import Sequence
@@ -76,3 +77,36 @@ def update_article_date(article_id: str, real_mail_date: date):
             return article
         else:
             return None
+
+
+def select_search_prompt_templates(
+    template_name: str | None = None,
+) -> list[tuple[Search_Prompt_Template, str | None]]:
+    with Session(engine) as session:
+        query = select(Search_Prompt_Template, Sys_User.user_name).outerjoin(
+            Sys_User, col(Sys_User.id) == col(Search_Prompt_Template.user_id)
+        )
+        if template_name:
+            query = query.where(col(Search_Prompt_Template.template_name).ilike(f"%{template_name}%"))
+        query = query.order_by(col(Search_Prompt_Template.create_time).desc())
+        return list(session.exec(query).all())
+
+
+def insert_search_prompt_template(template: Search_Prompt_Template):
+    with Session(engine) as session:
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        return template
+
+
+def delete_search_prompt_template(template_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    with Session(engine) as session:
+        template = session.get(Search_Prompt_Template, template_id)
+        if template is None:
+            return False
+        if template.user_id != user_id:
+            raise PermissionError("只能删除自己创建的提示词模版")
+        session.delete(template)
+        session.commit()
+        return True

@@ -25,6 +25,19 @@ class Article(SQLModel, table=True):
     real_mail_date: date | None = None
 
 
+class Search_Prompt_Template(SQLModel, table=True):
+    """
+    搜索提示词模版，所有用户公开可用，仅创建者可删除
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(index=True)
+    template_name: str = Field(max_length=100)
+    description: str | None = None
+    system_prompt: str
+    create_time: datetime = Field(default_factory=datetime.now)
+
+
 class Recipient(SQLModel, table=True):
     """
     邮件接收人
