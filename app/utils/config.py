@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     DEEPSEEK_API_KEY: str
+    DEEPSEEK_SEARCH_KEY: str | None = None
     DOUBAO_API_KEY: str
     DOUBAO_CRAWLER_BOT_ID: str
     GPT_API_KEY: str

@@ -5,6 +5,7 @@ from volcenginesdkarkruntime import Ark, AsyncArk
 
 from app.models.tables.databaseTables import Article
 from app.utils.config import settings
+from app.utils.deepseek_crawler import DeepSeekCrawler
 
 # ---------------------------------------------------------------------------
 # 豆包爬取与搜索工具
@@ -204,6 +205,7 @@ class DouBaoCrawler:
 
 crawler_dict = {
     "doubao": DouBaoCrawler,
+    "deepseek": DeepSeekCrawler,
 }
 
 

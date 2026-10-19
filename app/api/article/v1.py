@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -92,7 +93,9 @@ async def add_article_by_url(
 
 
 @router.post("/url_stream")
-async def url_stream(url: str, current_user: UserDep, crawler_type: str = "doubao"):
+async def url_stream(
+    url: str, current_user: UserDep, crawler_type: Literal["doubao", "deepseek"] = "doubao"
+):
     crawler = Crawler(crawler_type=crawler_type)
     return StreamingResponse(
         crawler.craw_stream_generator(url),
@@ -119,7 +122,9 @@ async def chat_stream(
 
 @router.post("/search_stream")
 async def search(
-    body: SearchBody, current_user: UserDep, crawler_type: str = "doubao"
+    body: SearchBody,
+    current_user: UserDep,
+    crawler_type: Literal["doubao", "deepseek"] = "doubao",
 ):
     crawler = Crawler(crawler_type=crawler_type, system_prompt=body.system_prompt)
     return StreamingResponse(
