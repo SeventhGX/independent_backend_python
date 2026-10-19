@@ -13,7 +13,7 @@ from app.utils.config import settings
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-flash"
-MAX_ANALYSIS_CHARACTERS = 60000
+MAX_ANALYSIS_CHARACTERS = 100000
 logger = logging.getLogger(__name__)
 
 
