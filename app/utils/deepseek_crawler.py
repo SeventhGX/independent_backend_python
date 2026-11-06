@@ -6,6 +6,10 @@ from urllib.parse import urlsplit
 
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
+from openai.types.chat import (
+    ChatCompletionMessageCustomToolCall,
+    ChatCompletionMessageFunctionToolCall,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.models.tables.databaseTables import Article
@@ -80,7 +84,7 @@ class DeepSeekCrawler:
         event = {"type": event_type, "provider": "deepseek", **payload}
         return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    def _error_event(self, error: Exception):
+    def _error_event(self, error: Exception, **context):
         status_code = None
         if isinstance(error, DeepSeekCrawlerError):
             code, message, status_code = error.code, str(error), error.status_code
@@ -97,14 +101,19 @@ class DeepSeekCrawler:
             logger.error("DeepSeek crawler failed: %s", type(error).__name__)
             code, message = "internal_error", "处理 DeepSeek 响应失败。"
         return self._event(
-            "error", error={"code": code, "message": message, "status_code": status_code}
+            "error", error={"code": code, "message": message, "status_code": status_code},
+            **context,
         )
 
-    async def _search_arguments(self, content: str) -> SearchArguments:
+    async def _search_tool_calls(
+        self, content: str
+    ) -> list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall]:
         prompt = (
             f"今天是 {date.today().isoformat()}。你负责把用户需求转换为 DeepSeek 网页搜索参数。"
-            "必须调用且只调用一次 web_search，不得编造搜索结果。"
-            "query 最多128个Unicode字符，count为1到50，默认10。"
+            "必须调用 web_search，不得编造搜索结果。"
+            "可按不同搜索方向生成多个调用，按优先级排列，避免重复查询。"
+            "服务端将按返回顺序依次执行所有调用。"
+            "每个调用的 query 最多128个Unicode字符，count为1到50，默认10。"
             "支持 site:、-site:、-关键词、精确短语、lang:、after:、before: 搜索语法；"
             "根据用户要求和补充提示词提取关键词、站点、语言、日期和条数。"
             "相对日期必须转换为具体日期。除非用户需要网页全文，need_content设为false。"
@@ -130,10 +139,13 @@ class DeepSeekCrawler:
             )
         if not completion.choices:
             raise DeepSeekCrawlerError("invalid_model_response", "模型未返回搜索参数。")
-        tool_calls = completion.choices[0].message.tool_calls or []
-        if len(tool_calls) != 1 or tool_calls[0].function.name != "web_search":
-            raise DeepSeekCrawlerError("invalid_model_response", "模型未返回唯一的 web_search 调用。")
-        return SearchArguments.model_validate_json(tool_calls[0].function.arguments)
+        choice = completion.choices[0]
+        if choice.finish_reason == "length":
+            raise DeepSeekCrawlerError("invalid_model_response", "搜索规划输出被截断，请缩小搜索范围后重试。")
+        tool_calls = choice.message.tool_calls or []
+        if not tool_calls:
+            raise DeepSeekCrawlerError("invalid_model_response", "模型未返回 web_search 调用。")
+        return tool_calls
 
     async def search_stream_generator(self, content: str):
         try:
@@ -141,15 +153,30 @@ class DeepSeekCrawler:
             if not content.strip():
                 raise DeepSeekCrawlerError("invalid_input", "搜索内容不能为空。")
             yield self._event("progress", stage="planning", message="正在生成搜索参数。")
-            arguments = await self._search_arguments(content)
-            payload = arguments.model_dump()
-            if len(content) <= 128:
-                payload["ori_question"] = content
-            yield self._event("progress", stage="searching", message="正在搜索网页。", query=arguments.query)
-            response = await self._tool_request("search", payload)
-            if not isinstance(response, dict) or not isinstance(response.get("results"), list):
-                raise DeepSeekCrawlerError("invalid_response", "搜索接口未返回 results 数组。")
-            yield self._event("search_results", query=arguments.query, data=response["results"])
+            tool_calls = await self._search_tool_calls(content)
+            for index, tool_call in enumerate(tool_calls, start=1):
+                context = {
+                    "call_index": index,
+                    "total_calls": len(tool_calls),
+                    "tool_call_id": tool_call.id,
+                }
+                try:
+                    if tool_call.type != "function" or tool_call.function.name != "web_search":
+                        raise DeepSeekCrawlerError("invalid_model_response", "模型返回了不支持的工具调用。")
+                    arguments = SearchArguments.model_validate_json(tool_call.function.arguments)
+                    context["query"] = arguments.query
+                    payload = arguments.model_dump()
+                    if len(content) <= 128:
+                        payload["ori_question"] = content
+                    yield self._event(
+                        "progress", stage="searching", message="正在搜索网页。", **context,
+                    )
+                    response = await self._tool_request("search", payload)
+                    if not isinstance(response, dict) or not isinstance(response.get("results"), list):
+                        raise DeepSeekCrawlerError("invalid_response", "搜索接口未返回 results 数组。")
+                    yield self._event("search_results", data=response["results"], **context)
+                except Exception as error:
+                    yield self._error_event(error, **context)
         except Exception as error:
             yield self._error_event(error)
         yield "data: [DONE]\n\n"
