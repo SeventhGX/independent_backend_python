@@ -1,6 +1,7 @@
 import asyncio
 import json
 
+from fastapi import HTTPException, status
 from volcenginesdkarkruntime import Ark, AsyncArk
 
 from app.models.tables.databaseTables import Article
@@ -21,6 +22,11 @@ class DouBaoCrawler:
         craw_bot_id: str = settings.DOUBAO_CRAWLER_BOT_ID,
         **kwargs,
     ) -> None:
+        # 临时停用豆包，在初始化 SDK 和建立流式响应前返回维护错误。
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="豆包模型API接口调整中",
+        )
         self.bot = Ark(api_key=api_key)
         self.async_bot = AsyncArk(api_key=api_key)
         self.craw_bot_id = craw_bot_id
@@ -186,7 +192,7 @@ class DouBaoCrawler:
 """
         tools = [{"type": "web_search", "max_keyword": 7, "limit": 20}]
         stream = await self.async_bot.responses.create(
-            model="doubao-seed-2-0-lite-260215",
+            model="Doubao-Seed-2.1-lite",
             input=[{"role": "system", "content": system_prompt}, {"role": "user", "content": content}],
             tools=tools,  # type: ignore
             max_tool_calls=10,
